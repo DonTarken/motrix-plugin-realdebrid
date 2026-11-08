@@ -20,6 +20,7 @@ function shouldSkip(url) {
     lower.startsWith("data:") ||
     lower.startsWith("blob:") ||
     lower.startsWith("file:") ||
+    lower.startsWith("magnet:") ||
     lower.includes("localhost") ||
     lower.includes("127.0.0.1") ||
     lower.includes("[::1]") ||
@@ -256,6 +257,11 @@ async function unrestrictLink(link, apiKey) {
     timeoutMs: 15000
   });
 
+  if (res.status === 401 || res.status === 403) {
+    log.warn("Real-Debrid: Jeton d'API non autorisé lors de l'unrestrict", { status: res.status });
+    return { error: "bad_token", errorCode: res.status };
+  }
+
   if (res.status !== 200) {
     log.warn("Real-Debrid /unrestrict/link statut HTTP non-200", { status: res.status });
     return null;
@@ -272,11 +278,15 @@ async function unrestrictLink(link, apiKey) {
       };
     }
 
-    if (data.error) {
+    if (data && data.error) {
       log.info("Real-Debrid: Lien non débridé", {
         error: data.error,
         code: data.error_code
       });
+      return {
+        error: data.error,
+        errorCode: data.error_code
+      };
     }
   } catch (e) {
     log.warn("Real-Debrid: Erreur de parsing réponse unrestrict", { err: String(e) });
@@ -290,6 +300,8 @@ async function unrestrictLink(link, apiKey) {
  * Intercepte les nouveaux téléchargements HTTP/HTTPS pour débrider les liens reconnus.
  */
 hooks.beforeCreate(async (ctx) => {
+  if (ctx.type !== "http") return ctx;
+
   try {
     const enabled = await config.get("enabled");
     if (enabled === false) {
@@ -315,6 +327,13 @@ hooks.beforeCreate(async (ctx) => {
     const apiKey = await getApiKey();
     if (!apiKey) {
       log.warn("Real-Debrid: Clé API absente des paramètres");
+      try {
+        await notify.show({
+          title: "Real-Debrid — Configuration requise",
+          body: "Veuillez renseigner votre jeton d'API dans Extensions ➔ Real-Debrid Resolver ➔ Paramètres.",
+          icon: "warning"
+        });
+      } catch {}
       return ctx;
     }
 
@@ -340,6 +359,26 @@ hooks.beforeCreate(async (ctx) => {
             ? `${unrestricted.filename} est prêt à télécharger en vitesse maximale !`
             : "Lien débridé avec succès.",
           icon: "success"
+        });
+      }
+    } else if (unrestricted && unrestricted.error) {
+      log.warn("Real-Debrid: Échec du débridage", { error: unrestricted.error });
+      const showNotif = await config.get("showNotification");
+      if (showNotif !== false) {
+        let msg = "Impossible de débrider ce lien.";
+        if (unrestricted.error === "file_unavailable") {
+          msg = "Fichier indisponible ou supprimé chez l'hébergeur.";
+        } else if (unrestricted.error === "bad_token") {
+          msg = "Jeton d'API Real-Debrid invalide ou expiré.";
+        } else if (unrestricted.error === "hoster_unavailable") {
+          msg = "Hébergeur temporairement indisponible sur Real-Debrid.";
+        } else if (unrestricted.error === "hoster_limit_reached") {
+          msg = "Quota de bande passante atteint pour cet hébergeur.";
+        }
+        await notify.show({
+          title: "Real-Debrid — Attention",
+          body: msg,
+          icon: "warning"
         });
       }
     }
