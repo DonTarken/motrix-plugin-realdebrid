@@ -1,0 +1,27 @@
+name: "💡 Feature Request"
+description: "Suggest an idea, enhancement, or new feature for the plugin."
+title: "[FEATURE]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement! (You can write in **English** or in **French**).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Feature Description"
+      description: "A clear and concise description of what you would like to see added."
+      placeholder: "e.g. Add support for Real-Debrid torrent/magnet conversion..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: "Use Case / Motivation"
+      description: "Why would this feature be useful for you and other users?"
+      placeholder: "e.g. It would allow adding torrents that Real-Debrid already has cached..."
+    validations:
+      required: true

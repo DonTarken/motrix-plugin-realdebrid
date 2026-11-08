@@ -79,6 +79,14 @@ This official community plugin (`.moext`) transforms Motrix into a modern, ultra
 
 ---
 
+## 💬 Feedback & Bug Reports
+
+- 🐛 **[Report a Bug](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=bug_report.yml)**: If a link fails to unrestrict or you experience unexpected behavior.
+- ✅ **[Confirm a Test / Speed Benchmark](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=test_confirmation.yml)**: Confirmed working with your account? Share your speed and feedback to help validate!
+- 💡 **[Request a Feature](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=feature_request.yml)**: Ideas and suggestions for future releases.
+
+---
+
 ## 💖 Support & Contributions
 
 If this plugin saves you time and bandwidth, consider supporting its development:

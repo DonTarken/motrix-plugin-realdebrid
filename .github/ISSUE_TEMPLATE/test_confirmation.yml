@@ -1,0 +1,60 @@
+name: "✅ Test Confirmation & Feedback"
+description: "Confirm that the plugin works with your Real-Debrid account and share your download speed / feedback."
+title: "[TEST]: Compatibility confirmed on "
+labels: ["feedback", "verified"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing the Real-Debrid resolver plugin! (English or French).
+        Your confirmation and screenshots help validate this extension for the official Motrix plugin registry.
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: "Operating System"
+      options:
+        - "Windows 11"
+        - "Windows 10"
+        - "macOS (Apple Silicon M1/M2/M3)"
+        - "macOS (Intel)"
+        - "Linux (Ubuntu / Debian)"
+        - "Linux (Other)"
+    validations:
+      required: true
+
+  - type: input
+    id: motrix_version
+    attributes:
+      label: "Motrix Version"
+      placeholder: "e.g. 2.0.0-beta.2"
+    validations:
+      required: true
+
+  - type: input
+    id: hosters_tested
+    attributes:
+      label: "File Hosters Tested"
+      placeholder: "e.g. 1fichier, Rapidgator, Turbobit..."
+    validations:
+      required: true
+
+  - type: input
+    id: download_speed
+    attributes:
+      label: "Peak Download Speed Observed"
+      placeholder: "e.g. ~95 MB/s on Gigabit fiber"
+    validations:
+      required: true
+
+  - type: textarea
+    id: comments
+    attributes:
+      label: "Comments & Feedback"
+      placeholder: "Smooth installation, link resolved instantly, no freeze observed..."
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: "Screenshot (optional but greatly appreciated)"
+      description: "Paste a screenshot of Motrix downloading or of the notification."
