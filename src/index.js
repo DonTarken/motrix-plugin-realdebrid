@@ -367,27 +367,14 @@ hooks.beforeCreate(async (ctx) => {
         });
       }
     } else if (unrestricted && unrestricted.error) {
-      log.warn("Real-Debrid: Échec du débridage", { error: unrestricted.error });
-      const showNotif = await config.get("showNotification");
-      if (showNotif !== false) {
-        let msg = "Impossible de débrider ce lien.";
-        if (unrestricted.error === "hoster_not_free") {
-          msg = "Abonnement Premium requis. Votre compte Real-Debrid est actuellement gratuit ('free').";
-        } else if (unrestricted.error === "file_unavailable") {
-          msg = "Fichier indisponible ou supprimé chez l'hébergeur.";
-        } else if (unrestricted.error === "bad_token") {
-          msg = "Jeton d'API Real-Debrid invalide ou expiré.";
-        } else if (unrestricted.error === "hoster_unavailable") {
-          msg = "Hébergeur temporairement indisponible sur Real-Debrid.";
-        } else if (unrestricted.error === "hoster_limit_reached") {
-          msg = "Quota de bande passante atteint pour cet hébergeur.";
-        }
-        await notify.show({
-          title: "Real-Debrid — Attention",
-          body: msg,
-          icon: "warning"
-        });
-      }
+      // En cas d'échec (compte free, hébergeur temporairement down, quota...),
+      // on enregistre l'information dans les logs sans afficher de popup système intempestif.
+      // Cela permet à un résolveur tiers (ex: AllDebrid) de prendre le relais en silence sans fausse alerte.
+      log.info("Real-Debrid: Lien non débridé par Real-Debrid", {
+        error: unrestricted.error,
+        code: unrestricted.errorCode,
+        url: originalUrl
+      });
     }
   } catch (err) {
     log.error("Real-Debrid: Exception dans hook beforeCreate", { err: String(err) });
