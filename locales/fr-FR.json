@@ -1,0 +1,12 @@
+{
+  "name": "Solveur Real-Debrid",
+  "description": "Débride et accélère automatiquement les liens de téléchargement d'hébergeurs supportés via votre compte premium Real-Debrid.",
+  "cmd.checkAccount": "Vérifier l'état du compte Real-Debrid",
+  "settings.title": "Real-Debrid",
+  "settings.apiKey.title": "Jeton d'API Real-Debrid",
+  "settings.apiKey.desc": "Votre jeton personnel d'API Real-Debrid (disponible sur real-debrid.com/apitoken).",
+  "settings.enabled.title": "Activer le débridage automatique",
+  "settings.enabled.desc": "Intercepte et débride automatiquement les liens d'hébergeurs de fichiers pris en charge.",
+  "settings.showNotification.title": "Afficher les notifications",
+  "settings.showNotification.desc": "Affiche une notification système lorsqu'un lien est débridé ou en cas d'erreur."
+}

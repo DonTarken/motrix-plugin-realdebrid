@@ -1,0 +1,65 @@
+{
+  "$schema": "https://motrix.app/schemas/plugin/v1.json",
+  "manifestVersion": 1,
+  "id": "community.realdebrid-resolver",
+  "name": "%name%",
+  "version": "1.0.0",
+  "description": "%description%",
+  "author": "DonTarken",
+  "homepage": "https://github.com/DonTarken/motrix-plugin-realdebrid",
+  "repository": "https://github.com/DonTarken/motrix-plugin-realdebrid",
+  "license": "MIT",
+  "categories": ["site-resolver", "integration"],
+  "keywords": ["realdebrid", "real-debrid", "debrid", "downloader", "resolver", "1fichier", "rapidgator"],
+  "engines": {
+    "motrix": ">=2.0.0 <3.0.0"
+  },
+  "main": "dist/plugin.js",
+  "requestedHeapMB": 32,
+  "permissions": ["http", "notify", "storage"],
+  "hostPermissions": ["*://*/*"],
+  "activationEvents": ["onTaskType:http", "onProtocol:https", "onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "community.realdebrid-resolver.checkAccount",
+        "title": "%cmd.checkAccount%",
+        "public": false
+      }
+    ],
+    "hooks": {
+      "beforeCreate": {
+        "role": "resolve"
+      }
+    },
+    "configuration": {
+      "title": "%settings.title%",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "title": "%settings.apiKey.title%",
+            "description": "%settings.apiKey.desc%",
+            "default": "",
+            "secret": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "%settings.enabled.title%",
+            "description": "%settings.enabled.desc%",
+            "default": true
+          },
+          "showNotification": {
+            "type": "boolean",
+            "title": "%settings.showNotification.title%",
+            "description": "%settings.showNotification.desc%",
+            "default": true
+          }
+        },
+        "required": ["apiKey"]
+      }
+    }
+  },
+  "l10n": "locales"
+}

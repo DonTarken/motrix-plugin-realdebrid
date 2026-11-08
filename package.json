@@ -1,0 +1,24 @@
+{
+  "name": "motrix-plugin-realdebrid",
+  "version": "1.0.0",
+  "description": "Real-Debrid download resolver plugin for Motrix download manager",
+  "main": "dist/plugin.js",
+  "scripts": {
+    "build": "node scripts/build-moext.js"
+  },
+  "keywords": [
+    "motrix",
+    "motrix-plugin",
+    "moext",
+    "realdebrid",
+    "real-debrid",
+    "debrid",
+    "download-manager"
+  ],
+  "author": "DonTarken",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DonTarken/motrix-plugin-realdebrid.git"
+  }
+}
