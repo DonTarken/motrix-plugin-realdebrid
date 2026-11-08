@@ -1,101 +1,69 @@
-# Real-Debrid Resolver Plugin for Motrix ⚡
+# Real-Debrid Resolver for Motrix
 
-<p align="center">
-  <b>Unrestrict and download files at full gigabit fiber speed within Motrix's sleek, modern UI.</b>
-</p>
+An open-source extension for the [Motrix](https://motrix.app) download manager that automatically resolves supported file hoster links (1fichier, Rapidgator, Mega, Turbobit, etc.) using the official Real-Debrid API.
 
-<p align="center">
-  <a href="https://github.com/DonTarken/motrix-plugin-realdebrid/releases/latest"><img src="https://img.shields.io/github/v/release/DonTarken/motrix-plugin-realdebrid?label=Latest%20Release&color=success&style=for-the-badge" alt="Latest Release" /></a>
-  <a href="https://motrix.app"><img src="https://img.shields.io/badge/Motrix-%3E%3D%202.0.0-orange?style=for-the-badge" alt="Motrix 2.0+" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License" /></a>
-  <a href="https://github.com/sponsors/DonTarken"><img src="https://img.shields.io/badge/Sponsor-%E2%99%A5-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
-  <a href="https://ko-fi.com/dontarken"><img src="https://img.shields.io/badge/Ko--fi-Support-F16061?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi" /></a>
-</p>
+[![Latest Release](https://img.shields.io/github/v/release/DonTarken/motrix-plugin-realdebrid?label=Release&color=blue)](https://github.com/DonTarken/motrix-plugin-realdebrid/releases/latest)
+[![Motrix Compatibility](https://img.shields.io/badge/Motrix->=%202.0.0-orange)](https://motrix.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/DonTarken)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-F16061?logo=ko-fi&logoColor=white)](https://ko-fi.com/dontarken)
 
-<p align="center">
-  <a href="README.fr.md">🇫🇷 Lire en Français</a> &nbsp;|&nbsp; 🇬🇧 <b>English</b>
-</p>
+[Français](README.fr.md) | **English**
 
 ---
 
-## ⚡ Why Use This Plugin?
+## Overview
 
-Do you use **Motrix** as your daily download manager and hold a **Real-Debrid** premium subscription?
+When adding links from supported file hosters to Motrix, this plugin intercepts the URLs via Motrix's plugin API, retrieves direct download links through your Real-Debrid account, and passes them to Aria2 for unthrottled downloading.
 
-This official community plugin (`.moext`) transforms Motrix into a modern, ultra-lightweight alternative to **JDownloader**:
-- **100% Automatic Unrestricting**: Paste any supported link (1fichier, Rapidgator, Mega, Turbobit, Katfile, DDownload, etc.), and Motrix instantly resolves the direct high-speed CDN stream.
-- **Max Throughput**: Saturates your gigabit fiber connection (up to 100+ MB/s) powered by Motrix's Aria2 multi-connection engine.
-- **Easy Configuration**: Simply paste your personal API token into the extension settings.
-- **100% Autonomous**: Runs natively inside vanilla Motrix 2.0+ with zero core modifications or external daemons required.
+- **Automatic resolution**: Intercepts links on task creation without manual copy-pasting into the Real-Debrid web interface.
+- **Direct Aria2 integration**: Uses Aria2's multi-connection engine with full HTTP Range resume support.
+- **Host caching**: Queries and caches the list of supported domains locally to minimize API requests.
+- **Privacy**: Your API token remains stored locally in Motrix and is only sent to the official Real-Debrid API.
 
 ---
 
-## 🚀 Quick Installation Guide
+## Installation
 
-### Step 1: Install the Extension in Motrix
-
-#### ⚡ Method A: Drag & Drop (Fastest)
-1. Download the latest **`realdebrid-resolver.moext`** from [GitHub Releases](https://github.com/DonTarken/motrix-plugin-realdebrid/releases/latest).
-2. Open **Motrix** and simply **drag and drop** the downloaded `.moext` file directly onto the Motrix window.
-3. Review requested permissions (*http*, *notify*, *storage*) and click **Install**.
-
-#### 🌐 Method B: Directly via GitHub
-1. In Motrix, navigate to the **"Extensions"** tab in the left sidebar (📦 icon).
-2. Click the **`+`** button in the upper-right corner.
-3. Enter:
+### Option 1: Directly from Motrix
+1. Go to the **Extensions** tab in Motrix.
+2. Click **Add an extension** (`+` button).
+3. Type:
    ```text
    DonTarken/motrix-plugin-realdebrid
    ```
-4. Click **Confirm** to download and install.
+4. Confirm to install.
+
+### Option 2: Manual `.moext` file
+1. Download `realdebrid-resolver.moext` from the [Releases page](https://github.com/DonTarken/motrix-plugin-realdebrid/releases/latest).
+2. Drag and drop the `.moext` file onto the Motrix window and confirm installation.
 
 ---
 
-### Step 2: Configure Your Real-Debrid API Token
+## Configuration
 
-1. Go to your official Real-Debrid token page:  
-   👉 **[https://real-debrid.com/apitoken](https://real-debrid.com/apitoken)**
-2. Copy your secret API token.
-3. In Motrix, open **Extensions** ➔ **Real-Debrid Resolver** ➔ **Settings** tab.
-4. Paste your token into the **Real-Debrid API Token** field.
-5. Click **Apply** (or save).
+1. Get your API token from [real-debrid.com/apitoken](https://real-debrid.com/apitoken).
+2. In Motrix, open **Extensions** -> **Real-Debrid Resolver** -> **Settings**.
+3. Paste your token into the API Key field and save.
+4. Add any supported file link in Motrix as usual.
 
 ---
 
-## 🎯 How It Works
+## Multi-Resolver Compatibility
 
-1. In Motrix, click the **`+`** button to add a new task.
-2. Paste any supported file hoster link (e.g. `https://rapidgator.net/file/...` or `https://1fichier.com/?...`).
-3. The plugin intercepts the URL in real time, requests a high-speed direct download link from Real-Debrid, and hands it off to Aria2.
-4. Your download begins immediately at maximum speed!
+This plugin is designed to work alongside [motrix-plugin-alldebrid](https://github.com/DonTarken/motrix-plugin-alldebrid). If both plugins are enabled, links already resolved by one service are ignored by the other, providing automatic fallback across providers.
 
 ---
 
-## 📋 Features
+## Issues & Feedback
 
-- ⚡ **Real-time Link Resolution**: Seamless interception via Motrix's official `beforeCreate` hook.
-- 💾 **Smart Domain Caching**: Automatically syncs and caches supported hosters (1 hour TTL) to minimize latency.
-- 🔔 **Desktop Notifications**: Optional desktop alerts when links are unlocked or if token issues occur.
-- 🔒 **Privacy-First**: Zero tracking. Direct HTTPS communication between your local Motrix and the official Real-Debrid API.
-
----
-
-## 💬 Feedback & Bug Reports
-
-- 🐛 **[Report a Bug](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=bug_report.yml)**: If a link fails to unrestrict or you experience unexpected behavior.
-- ✅ **[Confirm a Test / Speed Benchmark](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=test_confirmation.yml)**: Confirmed working with your account? Share your speed and feedback to help validate!
-- 💡 **[Request a Feature](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=feature_request.yml)**: Ideas and suggestions for future releases.
+- [Report a bug](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=bug_report.yml)
+- [Confirm test results & speeds](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=test_confirmation.yml)
+- [Request a feature](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=feature_request.yml)
+- [Discussion thread for testers](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/1)
 
 ---
 
-## 💖 Support & Contributions
+## License
 
-If this plugin saves you time and bandwidth, consider supporting its development:
-
-- 💖 **[Sponsor on GitHub](https://github.com/sponsors/DonTarken)**
-- ☕ **[Buy me a Coffee on Ko-fi](https://ko-fi.com/dontarken)**
-
----
-
-## 📄 License
-
-MIT © [DonTarken](https://github.com/DonTarken)
+MIT License - see [LICENSE](LICENSE) for details.
