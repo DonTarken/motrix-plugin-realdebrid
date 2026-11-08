@@ -25,7 +25,12 @@ function shouldSkip(url) {
     lower.includes("127.0.0.1") ||
     lower.includes("[::1]") ||
     lower.includes("real-debrid.com") ||
-    lower.includes("rd-cdn.com")
+    lower.includes("rd-cdn.com") ||
+    lower.includes("alldebrid.com") ||
+    lower.includes("alldeb.ovh") ||
+    lower.includes("debrid.it") ||
+    lower.includes("debrid-link.com") ||
+    lower.includes("premiumize.me")
   );
 }
 
