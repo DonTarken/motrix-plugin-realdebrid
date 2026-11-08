@@ -366,7 +366,9 @@ hooks.beforeCreate(async (ctx) => {
       const showNotif = await config.get("showNotification");
       if (showNotif !== false) {
         let msg = "Impossible de débrider ce lien.";
-        if (unrestricted.error === "file_unavailable") {
+        if (unrestricted.error === "hoster_not_free") {
+          msg = "Abonnement Premium requis. Votre compte Real-Debrid est actuellement gratuit ('free').";
+        } else if (unrestricted.error === "file_unavailable") {
           msg = "Fichier indisponible ou supprimé chez l'hébergeur.";
         } else if (unrestricted.error === "bad_token") {
           msg = "Jeton d'API Real-Debrid invalide ou expiré.";
