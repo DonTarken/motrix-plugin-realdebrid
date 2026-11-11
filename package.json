@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "description": "Real-Debrid download resolver plugin for Motrix download manager",
   "main": "dist/plugin.js",
+  "type": "module",
   "scripts": {
-    "build": "node scripts/build-moext.js"
+    "build": "node scripts/build-moext.js",
+    "test": "node --import ./tests/setup.mjs --test"
   },
   "keywords": [
     "motrix",

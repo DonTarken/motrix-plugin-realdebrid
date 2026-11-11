@@ -1,40 +1,114 @@
 /**
  * Motrix Real-Debrid Resolver Plugin
- * 
- * Intercepte automatiquement les liens d'hébergeurs supportés ajoutés dans Motrix,
- * les débride via l'API officielle Real-Debrid v1.0, et transmet le lien direct haute vitesse à Aria2.
- * 
+ *
+ * Automatically intercepts supported host links added to Motrix,
+ * resolves them via the official Real-Debrid REST API v1.0, and passes
+ * the high-speed direct download link to Aria2.
+ *
  * @author DonTarken
  * @license MIT
  */
 
-import { commands, config, hooks, http, lifecycle, log, notify, storage } from "motrix:plugin-api";
+import {
+  commands,
+  config,
+  hooks,
+  http,
+  i18n,
+  lifecycle,
+  log,
+  notify,
+  storage,
+} from "motrix:plugin-api";
 
 const API_BASE = "https://api.real-debrid.com/rest/1.0";
 
-// Domaines et préfixes à ignorer systématiquement
+// Real-Debrid domains & other debrid services excluded from unrestricting
+const EXCLUDED_HOSTS = [
+  "real-debrid.com",
+  "rd-cdn.com",
+  "alldebrid.com",
+  "alldeb.ovh",
+  "debrid.it",
+  "debrid-link.com",
+  "premiumize.me",
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+];
+
+// Helper to translate notification texts via Motrix's i18n module
+function t(key, params) {
+  try {
+    if (typeof i18n?.t === "function") {
+      return i18n.t(key, params);
+    }
+  } catch {}
+  return key;
+}
+
+// Strict authority extraction following RFC 3986
+function extractHostname(url) {
+  if (!url || typeof url !== "string") return "";
+  const match = url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]+)/);
+  if (!match) return "";
+
+  let authority = match[1];
+
+  // Strip user credentials (user:pass@host)
+  const atIndex = authority.lastIndexOf("@");
+  if (atIndex !== -1) {
+    authority = authority.slice(atIndex + 1);
+  }
+
+  // Handle IPv6 bracketed hosts: [2001:db8::1] or [::1]:8080
+  if (authority.startsWith("[")) {
+    const bracketEnd = authority.indexOf("]");
+    if (bracketEnd !== -1) {
+      return authority.slice(0, bracketEnd + 1).toLowerCase();
+    }
+  }
+
+  // Strip port (:8080)
+  const colonIndex = authority.indexOf(":");
+  if (colonIndex !== -1) {
+    authority = authority.slice(0, colonIndex);
+  }
+
+  return authority.trim().toLowerCase();
+}
+
+// Strict hostname verification (prevents false positives in path or query)
 function shouldSkip(url) {
   if (!url || typeof url !== "string") return true;
-  const lower = url.toLowerCase();
-  return (
+  const lower = url.trim().toLowerCase();
+
+  if (
     lower.startsWith("data:") ||
     lower.startsWith("blob:") ||
     lower.startsWith("file:") ||
-    lower.startsWith("magnet:") ||
-    lower.includes("localhost") ||
-    lower.includes("127.0.0.1") ||
-    lower.includes("[::1]") ||
-    lower.includes("real-debrid.com") ||
-    lower.includes("rd-cdn.com") ||
-    lower.includes("alldebrid.com") ||
-    lower.includes("alldeb.ovh") ||
-    lower.includes("debrid.it") ||
-    lower.includes("debrid-link.com") ||
-    lower.includes("premiumize.me")
-  );
+    lower.startsWith("magnet:")
+  ) {
+    return true;
+  }
+
+  if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+    return true;
+  }
+
+  const host = extractHostname(url);
+  if (!host) return true;
+
+  for (const excluded of EXCLUDED_HOSTS) {
+    if (host === excluded || host.endsWith("." + excluded)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
-// Formatage de la date d'expiration ISO / Unix
+// Format expiration date
 function formatExpiration(exp) {
   if (!exp) return "N/A";
   try {
@@ -49,7 +123,7 @@ function formatExpiration(exp) {
   return String(exp);
 }
 
-// Calcul des jours restants avant expiration
+// Calculate days remaining before expiration
 function getDaysRemaining(exp) {
   if (!exp) return 0;
   try {
@@ -62,120 +136,90 @@ function getDaysRemaining(exp) {
   return 0;
 }
 
-/**
- * Récupération du jeton API Real-Debrid :
- * 1. Depuis les paramètres de l'extension (config.get("apiKey"))
- * 2. Repli éventuel depuis le stockage persistant (storage.get("apiKey"))
- */
+// Retrieve API Token from configuration
 async function getApiKey() {
   try {
-    const fromConfig = await config.get("apiKey");
-    if (fromConfig && typeof fromConfig === "string" && fromConfig.trim()) {
-      return fromConfig.trim();
+    const key = await config.get("apiKey");
+    if (typeof key === "string" && key.trim().length > 0) {
+      return key.trim();
     }
-  } catch (e) {
-    log.debug("Lecture config impossible", { err: String(e) });
-  }
-
-  try {
-    const stored = await storage.get("apiKey");
-    if (stored && typeof stored === "string" && stored.trim()) {
-      return stored.trim();
-    }
-  } catch (e) {
-    log.debug("Lecture storage impossible", { err: String(e) });
-  }
-
-  return null;
+  } catch {}
+  return "";
 }
 
-/**
- * Vérification du compte et de l'abonnement Premium via l'API Real-Debrid /user
- */
+// Check Real-Debrid account status via /rest/1.0/user
 async function checkAccount(apiKey, triggerNotification = false) {
-  if (!apiKey) {
-    log.warn("Real-Debrid: Jeton d'API manquant");
-    if (triggerNotification) {
-      await notify.show({
-        title: "Real-Debrid",
-        body: "Aucun jeton d'API configuré. Rendez-vous dans Extensions ➔ Real-Debrid Resolver ➔ Paramètres.",
-        icon: "warning"
-      });
-    }
-    return null;
-  }
+  if (!apiKey) return null;
 
   try {
     const res = await http.request({
       method: "GET",
       url: `${API_BASE}/user`,
-      headers: [
-        { name: "Authorization", value: `Bearer ${apiKey}` }
-      ],
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
       responseType: "text",
-      timeoutMs: 10000
+      timeoutMs: 8000,
     });
 
-    if (res.status === 401 || res.status === 403) {
-      log.warn("Real-Debrid: Jeton d'API invalide", { status: res.status });
-      if (triggerNotification) {
-        await notify.show({
-          title: "Real-Debrid — Erreur d'authentification",
-          body: "Votre jeton d'API Real-Debrid est invalide ou expiré.",
-          icon: "error"
-        });
-      }
-      return null;
-    }
-
-    if (res.status !== 200) {
-      log.warn("Real-Debrid /user statut HTTP inattendu", { status: res.status });
-      if (triggerNotification) {
-        await notify.show({
-          title: "Real-Debrid — Erreur",
-          body: `Échec de communication avec Real-Debrid (HTTP ${res.status})`,
-          icon: "error"
-        });
-      }
-      return null;
-    }
-
-    const u = JSON.parse(res.body);
-    if (u && u.username) {
+    if (res.status === 200 && res.body) {
+      const u = JSON.parse(res.body);
       const isPremium = u.type === "premium";
-      const days = getDaysRemaining(u.expiration);
       const expDate = formatExpiration(u.expiration);
+      const days = getDaysRemaining(u.expiration);
 
-      log.info("Real-Debrid: Compte validé", {
-        username: u.username,
+      log.info("Real-Debrid: Account verified", {
         type: u.type,
-        daysRemaining: days
+        daysRemaining: days,
       });
 
       if (triggerNotification) {
         if (isPremium) {
           await notify.show({
-            title: "Real-Debrid — Compte Premium Actif",
-            body: `Utilisateur : ${u.username} | Expire le ${expDate} (${days} jours restants).`,
-            icon: "success"
+            title: t("notif.account.premium.title"),
+            body: t("notif.account.premium.body", {
+              username: u.username,
+              expDate,
+              days,
+            }),
+            icon: "success",
           });
         } else {
           await notify.show({
-            title: "Real-Debrid — Non Premium",
-            body: `Compte ${u.username} reconnu, mais l'abonnement Premium a expiré.`,
-            icon: "error"
+            title: t("notif.account.nonPremium.title"),
+            body: t("notif.account.nonPremium.body", {
+              username: u.username,
+            }),
+            icon: "error",
           });
         }
       }
       return u;
+    } else {
+      let errCode = "HTTP_" + res.status;
+      try {
+        const errObj = JSON.parse(res.body);
+        if (errObj.error) errCode = errObj.error;
+      } catch {}
+      log.warn("Real-Debrid /user error", { code: errCode });
+      if (triggerNotification) {
+        await notify.show({
+          title: t("notif.account.authError.title"),
+          body: t("notif.account.authError.body", {
+            code: errCode,
+            message: "Authentication failed",
+          }),
+          icon: "error",
+        });
+      }
     }
   } catch (e) {
     log.error("Real-Debrid /user exception", { err: String(e) });
     if (triggerNotification) {
       await notify.show({
-        title: "Real-Debrid — Erreur",
-        body: `Impossible de vérifier le compte : ${String(e)}`,
-        icon: "error"
+        title: t("notif.error.title"),
+        body: t("notif.error.unknown", { err: String(e) }),
+        icon: "error",
       });
     }
   }
@@ -183,15 +227,15 @@ async function checkAccount(apiKey, triggerNotification = false) {
 }
 
 /**
- * Gestion du cache des hébergeurs supportés (/hosts/domains)
+ * Supported hosts cache management (/rest/1.0/hosts/domains)
  */
 let cachedDomains = null;
 let lastHostsRefresh = 0;
-const HOSTS_CACHE_TTL = 3600000; // 1 heure
+const HOSTS_CACHE_TTL = 3600000; // 1 hour
 
-async function getSupportedDomains() {
+async function getSupportedDomains(forceRefresh = false) {
   const now = Date.now();
-  if (cachedDomains && (now - lastHostsRefresh < HOSTS_CACHE_TTL)) {
+  if (!forceRefresh && cachedDomains && now - lastHostsRefresh < HOSTS_CACHE_TTL) {
     return cachedDomains;
   }
 
@@ -200,49 +244,67 @@ async function getSupportedDomains() {
       method: "GET",
       url: `${API_BASE}/hosts/domains`,
       responseType: "text",
-      timeoutMs: 8000
+      timeoutMs: 8000,
     });
 
     if (res.status === 200 && res.body) {
       const domainsArray = JSON.parse(res.body);
       if (Array.isArray(domainsArray)) {
-        const domains = new Set(domainsArray.map(d => String(d).toLowerCase().trim()));
+        const domains = new Set();
+        for (const d of domainsArray) {
+          if (typeof d === "string" && d.trim().length > 0) {
+            domains.add(d.trim().toLowerCase());
+          }
+        }
         cachedDomains = domains;
         lastHostsRefresh = now;
-        log.info("Real-Debrid: Liste des hébergeurs rafraîchie", { count: domains.size });
+        log.info("Real-Debrid: Refreshed supported hosts list", {
+          count: domains.size,
+        });
         return domains;
       }
     }
   } catch (e) {
-    log.warn("Real-Debrid: Échec de récupération de la liste des hébergeurs", { err: String(e) });
+    log.warn("Real-Debrid: Failed to fetch supported hosts list", {
+      err: String(e),
+    });
   }
 
   return cachedDomains;
 }
 
-function extractHostname(url) {
-  if (!url || typeof url !== "string") return "";
-  const m = url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]+)/);
-  if (!m) return "";
-  let host = m[1];
-  if (host.includes("@")) host = host.split("@").pop();
-  if (host.includes(":")) host = host.split(":")[0];
-  return host.toLowerCase();
+function resetHostsCache() {
+  cachedDomains = null;
+  lastHostsRefresh = 0;
 }
 
+/**
+ * Strict fail-closed host check
+ */
 function isSupportedHost(url, domains) {
-  if (!domains || domains.size === 0) return true;
+  // Fail-closed: return false if no validated list is available
+  if (!domains || !(domains instanceof Set) || domains.size === 0) {
+    return false;
+  }
+
   const host = extractHostname(url);
   if (!host) return false;
+
+  // Exact match
   if (domains.has(host)) return true;
+
+  // Dot-boundary suffix matching (e.g. dl.rapidgator.net matches rapidgator.net)
   for (const d of domains) {
-    if (host === d || host.endsWith("." + d)) return true;
+    if (host.endsWith("." + d)) {
+      return true;
+    }
   }
+
   return false;
 }
 
 /**
- * Débridage d'un lien via /unrestrict/link
+ * Unrestrict link via /rest/1.0/unrestrict/link (POST)
  */
 async function unrestrictLink(link, apiKey) {
   const postData = `link=${encodeURIComponent(link)}`;
@@ -250,151 +312,135 @@ async function unrestrictLink(link, apiKey) {
   const res = await http.request({
     method: "POST",
     url: `${API_BASE}/unrestrict/link`,
-    headers: [
-      { name: "Authorization", value: `Bearer ${apiKey}` },
-      { name: "Content-Type", value: "application/x-www-form-urlencoded" }
-    ],
-    body: {
-      type: "string",
-      data: postData
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
     },
+    body: postData,
     responseType: "text",
-    timeoutMs: 15000
+    timeoutMs: 15000,
   });
 
-  if (res.status === 401 || res.status === 403) {
-    log.warn("Real-Debrid: Jeton d'API non autorisé lors de l'unrestrict", { status: res.status });
-    return { error: "bad_token", errorCode: res.status };
-  }
-
   if (res.status !== 200) {
-    log.warn("Real-Debrid /unrestrict/link statut HTTP non-200", { status: res.status });
+    let errorCode = `HTTP_${res.status}`;
+    try {
+      const errJson = JSON.parse(res.body);
+      if (errJson.error) errorCode = errJson.error;
+    } catch {}
+    log.info("Real-Debrid: Link could not be unrestricted", { code: errorCode });
     return null;
   }
 
-  try {
-    const data = JSON.parse(res.body);
-    if (data && data.download) {
-      return {
-        directUrl: data.download,
-        filename: data.filename,
-        filesize: data.filesize,
-        host: data.host
-      };
-    }
+  const parsed = JSON.parse(res.body);
+  if (parsed.download) {
+    return {
+      directUrl: parsed.download,
+      filename: parsed.filename,
+      filesize: parsed.filesize,
+      host: parsed.host,
+    };
+  }
 
-    if (data && data.error) {
-      log.info("Real-Debrid: Lien non débridé", {
-        error: data.error,
-        code: data.error_code
-      });
-      return {
-        error: data.error,
-        errorCode: data.error_code
-      };
-    }
-  } catch (e) {
-    log.warn("Real-Debrid: Erreur de parsing réponse unrestrict", { err: String(e) });
+  if (parsed.error) {
+    log.info("Real-Debrid: Link could not be unrestricted", {
+      code: parsed.error,
+      message: parsed.message,
+    });
   }
 
   return null;
 }
 
 /**
- * Hook principal : beforeCreate
- * Intercepte les nouveaux téléchargements HTTP/HTTPS pour débrider les liens reconnus.
+ * beforeCreate hook: intercept and rewrite download link
  */
 hooks.beforeCreate(async (ctx) => {
   if (ctx.type !== "http") return ctx;
 
+  const originalUrl = ctx.uris?.[0];
+  if (!originalUrl || shouldSkip(originalUrl)) return ctx;
+
+  const enabled = await config.get("enabled");
+  if (enabled === false) return ctx;
+
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    log.warn("Real-Debrid: No API key configured.");
+    try {
+      await notify.show({
+        title: t("notif.configRequired.title"),
+        body: t("notif.configRequired.body"),
+        icon: "warning",
+        urgency: "low",
+      });
+    } catch {}
+    return ctx;
+  }
+
   try {
-    const enabled = await config.get("enabled");
-    if (enabled === false) {
-      log.debug("Real-Debrid: Plugin désactivé par l'utilisateur.");
-      return ctx;
-    }
-
-    if (!ctx.uris || !Array.isArray(ctx.uris) || ctx.uris.length === 0) {
-      return ctx;
-    }
-
-    const originalUrl = ctx.uris[0];
-    if (shouldSkip(originalUrl)) {
-      return ctx;
-    }
-
     const domains = await getSupportedDomains();
-    if (domains && !isSupportedHost(originalUrl, domains)) {
-      log.debug("Real-Debrid: Domaine non supporté, pas de débridage", { url: originalUrl });
+    if (!isSupportedHost(originalUrl, domains)) {
+      log.debug("Real-Debrid: Unsupported host, skipping", {
+        host: extractHostname(originalUrl),
+      });
       return ctx;
     }
 
-    const apiKey = await getApiKey();
-    if (!apiKey) {
-      log.warn("Real-Debrid: Clé API absente des paramètres");
-      try {
-        await notify.show({
-          title: "Real-Debrid — Configuration requise",
-          body: "Veuillez renseigner votre jeton d'API dans Extensions ➔ Real-Debrid Resolver ➔ Paramètres.",
-          icon: "warning"
-        });
-      } catch {}
-      return ctx;
-    }
+    log.info("Real-Debrid: Unrestricting link...", {
+      host: extractHostname(originalUrl),
+    });
+    const result = await unrestrictLink(originalUrl, apiKey);
 
-    log.info("Real-Debrid: Débridage en cours...", { url: originalUrl });
-    const unrestricted = await unrestrictLink(originalUrl, apiKey);
-
-    if (unrestricted && unrestricted.directUrl) {
-      log.info("Real-Debrid: Lien débridé avec succès !", {
-        directUrl: unrestricted.directUrl,
-        filename: unrestricted.filename
+    if (result && result.directUrl) {
+      log.info("Real-Debrid: Link unrestricted successfully", {
+        host: extractHostname(result.directUrl),
+        filename: result.filename,
       });
 
-      // Remplacement du lien source par le lien direct Real-Debrid
+      // Update URIs
       ctx.update({
-        uris: [unrestricted.directUrl]
+        uris: [result.directUrl],
       });
 
       const showNotif = await config.get("showNotification");
       if (showNotif !== false) {
-        await notify.show({
-          title: "Real-Debrid — Téléchargement débridé",
-          body: unrestricted.filename
-            ? `${unrestricted.filename} est prêt à télécharger en vitesse maximale !`
-            : "Lien débridé avec succès.",
-          icon: "success"
-        });
+        try {
+          await notify.show({
+            title: t("notif.unlocked.title"),
+            body: result.filename || t("notif.unlocked.body"),
+            icon: "success",
+            urgency: "low",
+          });
+        } catch {}
       }
-    } else if (unrestricted && unrestricted.error) {
-      // En cas d'échec (compte free, hébergeur temporairement down, quota...),
-      // on enregistre l'information dans les logs sans afficher de popup système intempestif.
-      // Cela permet à un résolveur tiers (ex: AllDebrid) de prendre le relais en silence sans fausse alerte.
-      log.info("Real-Debrid: Lien non débridé par Real-Debrid", {
-        error: unrestricted.error,
-        code: unrestricted.errorCode,
-        url: originalUrl
-      });
     }
   } catch (err) {
-    log.error("Real-Debrid: Exception dans hook beforeCreate", { err: String(err) });
+    log.error("Real-Debrid: Unexpected error", { err: String(err) });
   }
 
   return ctx;
 });
 
 /**
- * Commande manuelle : Vérifier l'état du compte Real-Debrid
+ * Manual command to check account status
  */
 commands.register("community.realdebrid-resolver.checkAccount", async () => {
-  log.info("Real-Debrid: Commande de vérification de compte invoquée.");
   const apiKey = await getApiKey();
-  return await checkAccount(apiKey, true);
+  await checkAccount(apiKey, true);
 });
 
-/**
- * Cycle de vie : Arrêt propre
- */
 lifecycle.onDeactivate(async () => {
-  log.info("Real-Debrid Resolver désactivé.");
+  log.info("Real-Debrid Resolver deactivated.");
 });
+
+// Exports for automated unit tests
+export {
+  shouldSkip,
+  extractHostname,
+  isSupportedHost,
+  unrestrictLink,
+  getSupportedDomains,
+  resetHostsCache,
+  getApiKey,
+  checkAccount,
+};

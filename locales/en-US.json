@@ -8,5 +8,18 @@
   "settings.enabled.title": "Enable Automatic Unrestricting",
   "settings.enabled.desc": "Automatically intercept and unrestrict supported file hoster links.",
   "settings.showNotification.title": "Show Notifications",
-  "settings.showNotification.desc": "Display notifications when links are unrestricted or errors occur."
+  "settings.showNotification.desc": "Display notifications when links are unrestricted or account status updates.",
+  "notif.unlocked.title": "Link unrestricted successfully!",
+  "notif.unlocked.body": "High-speed direct download via Real-Debrid.",
+  "notif.configRequired.title": "Real-Debrid — Configuration Required",
+  "notif.configRequired.body": "Please configure your API token in Extensions ➔ Real-Debrid Resolver ➔ Settings.",
+  "notif.account.premium.title": "Real-Debrid — Premium Active",
+  "notif.account.premium.body": "User: {{username}} | Expires on {{expDate}} ({{days}} days remaining).",
+  "notif.account.nonPremium.title": "Real-Debrid — Non-Premium",
+  "notif.account.nonPremium.body": "Account {{username}} verified, but Premium subscription is inactive.",
+  "notif.account.authError.title": "Real-Debrid — Authentication Error",
+  "notif.account.authError.body": "Error: {{code}} ({{message}})",
+  "notif.error.title": "Real-Debrid — Error",
+  "notif.error.body": "Failed to communicate with Real-Debrid (HTTP {{status}})",
+  "notif.error.unknown": "Unable to verify account: {{err}}"
 }

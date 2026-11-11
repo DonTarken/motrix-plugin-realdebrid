@@ -19,7 +19,8 @@ Lorsque vous ajoutez un lien d'hébergeur pris en charge dans Motrix, le plugin 
 - **Débridage automatique** : Les liens sont convertis lors de l'ajout dans Motrix, sans avoir à les copier-coller manuellement sur le site de Real-Debrid.
 - **Intégration directe avec Aria2** : Téléchargement multi-connexions avec reprise sur coupure réseau.
 - **Cache local des hébergeurs** : La liste des domaines supportés est mise en cache localement afin de limiter les requêtes inutiles à l'API.
-- **Sécurité** : Votre jeton d'API est stocké localement dans Motrix et n'est transmis qu'à l'API officielle de Real-Debrid.
+- **Sécurité & Confidentialité** : Votre jeton d'API est stocké localement dans Motrix et n'est transmis qu'à l'API officielle de Real-Debrid via un en-tête Bearer sécurisé.
+- **Testé & Robuste** : Suite complète de 15 tests unitaires automatisés validant la sécurité fail-closed, l'assainissement des diagnostics et la résilience réseau.
 
 ---
 

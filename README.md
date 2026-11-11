@@ -19,7 +19,8 @@ When adding links from supported file hosters to Motrix, this plugin intercepts 
 - **Automatic resolution**: Intercepts links on task creation without manual copy-pasting into the Real-Debrid web interface.
 - **Direct Aria2 integration**: Uses Aria2's multi-connection engine with full HTTP Range resume support.
 - **Host caching**: Queries and caches the list of supported domains locally to minimize API requests.
-- **Privacy**: Your API token remains stored locally in Motrix and is only sent to the official Real-Debrid API.
+- **Privacy & Security**: Your API token remains stored locally in Motrix and is only sent to the official Real-Debrid API via Bearer headers.
+- **Tested & Hardened**: Comprehensive 15-test automated test suite covering fail-closed security, diagnostic sanitization, and network resilience.
 
 ---
 
