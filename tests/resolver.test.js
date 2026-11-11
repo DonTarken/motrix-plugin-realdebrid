@@ -6,7 +6,9 @@ import {
   isSupportedHost,
   unrestrictLink,
   getSupportedDomains,
-  resetHostsCache
+  resetHostsCache,
+  getApiKey,
+  checkAccount
 } from "../src/index.js";
 import { state, resetMockState } from "./mock-api.mjs";
 
@@ -219,5 +221,303 @@ describe("Network Security, Bearer Auth & Diagnostic Sanitization", () => {
     const domains = await getSupportedDomains(true);
     assert.ok(domains === null || domains instanceof Set);
     assert.equal(isSupportedHost("https://unsupported-host.org/test", domains), false);
+  });
+});
+
+describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
+  beforeEach(() => {
+    resetMockState();
+    resetHostsCache();
+  });
+
+  it("successfully unrestricts supported URLs and rewrites ctx.uris (Happy Path)", async () => {
+    state.configStore.set("apiKey", "VALID_KEY_XYZ");
+
+    state.httpMockResponse = (opts) => {
+      if (opts.url.includes("/hosts/domains")) {
+        return { status: 200, body: JSON.stringify(["rapidgator.net"]) };
+      }
+      if (opts.url.includes("/unrestrict/link")) {
+        return {
+          status: 200,
+          body: JSON.stringify({
+            id: "XYZ789",
+            filename: "archive_video.mp4",
+            filesize: 104857600,
+            link: "https://rapidgator.net/file/123/archive_video.mp4",
+            host: "rapidgator.net",
+            download: "https://12.download.real-debrid.com/d/XYZ789/archive_video.mp4"
+          })
+        };
+      }
+      return { status: 404, body: "{}" };
+    };
+
+    const ctx = {
+      type: "http",
+      uris: ["https://rapidgator.net/file/123/archive_video.mp4"],
+      update: (patch) => { Object.assign(ctx, patch); }
+    };
+
+    const result = await state.beforeCreateHook(ctx);
+
+    assert.equal(
+      result.uris[0],
+      "https://12.download.real-debrid.com/d/XYZ789/archive_video.mp4",
+      "Hook must rewrite download URL to Real-Debrid CDN link"
+    );
+    assert.equal(state.notifications.length, 1, "Success notification must be triggered");
+    assert.equal(state.notifications[0].title, "Link unrestricted successfully!");
+    assert.equal(state.notifications[0].body, "archive_video.mp4");
+  });
+
+  it("bypasses non-http downloads (magnets, torrents) without calling network", async () => {
+    state.configStore.set("apiKey", "VALID_KEY_XYZ");
+    const ctx = {
+      type: "bittorrent",
+      uris: ["magnet:?xt=urn:btih:abcdef1234567890"],
+      update: (patch) => { Object.assign(ctx, patch); }
+    };
+
+    const result = await state.beforeCreateHook(ctx);
+
+    assert.equal(state.httpRequests.length, 0, "No network request for bittorrent downloads");
+    assert.equal(result.uris[0], "magnet:?xt=urn:btih:abcdef1234567890");
+  });
+
+  it("bypasses unrestricting when plugin is disabled in config", async () => {
+    state.configStore.set("apiKey", "VALID_KEY_XYZ");
+    state.configStore.set("enabled", false);
+
+    const ctx = {
+      type: "http",
+      uris: ["https://rapidgator.net/file/123"],
+      update: (patch) => { Object.assign(ctx, patch); }
+    };
+
+    const result = await state.beforeCreateHook(ctx);
+
+    assert.equal(state.httpRequests.length, 0, "No network request when plugin is disabled");
+    assert.equal(result.uris[0], "https://rapidgator.net/file/123");
+  });
+
+  it("warns user via notification when API key is missing and preserves original download", async () => {
+    state.configStore.delete("apiKey");
+
+    const ctx = {
+      type: "http",
+      uris: ["https://rapidgator.net/file/123"],
+      update: (patch) => { Object.assign(ctx, patch); }
+    };
+
+    const result = await state.beforeCreateHook(ctx);
+
+    assert.equal(state.httpRequests.length, 0, "No network request when API key is missing");
+    assert.equal(result.uris[0], "https://rapidgator.net/file/123");
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — Configuration Required");
+  });
+
+  it("falls back gracefully when Real-Debrid API returns error (free account, bad token, dead link)", async () => {
+    state.configStore.set("apiKey", "FREE_OR_INVALID_KEY");
+
+    state.httpMockResponse = (opts) => {
+      if (opts.url.includes("/hosts/domains")) {
+        return { status: 200, body: JSON.stringify(["turbobit.net"]) };
+      }
+      if (opts.url.includes("/unrestrict/link")) {
+        return {
+          status: 403,
+          body: JSON.stringify({ error: "bad_token", error_code: 8 })
+        };
+      }
+      return { status: 404, body: "{}" };
+    };
+
+    const originalUrl = "https://turbobit.net/download/abc123.zip";
+    const ctx = {
+      type: "http",
+      uris: [originalUrl],
+      update: (patch) => { Object.assign(ctx, patch); }
+    };
+
+    const result = await state.beforeCreateHook(ctx);
+
+    assert.equal(result.uris[0], originalUrl, "Original URL must remain untouched on API error");
+    assert.equal(state.notifications.length, 0, "No success notification should be emitted");
+    assert.ok(
+      state.logs.some(l => l.msg.includes("could not be unrestricted")),
+      "Diagnostic log should record the unrestrict failure"
+    );
+  });
+
+  it("falls back gracefully when Real-Debrid unrestrict request throws network timeout", async () => {
+    state.configStore.set("apiKey", "VALID_KEY");
+
+    state.httpMockResponse = (opts) => {
+      if (opts.url.includes("/hosts/domains")) {
+        return { status: 200, body: JSON.stringify(["turbobit.net"]) };
+      }
+      if (opts.url.includes("/unrestrict/link")) {
+        const timeoutErr = new Error("Connection timed out after 15000ms");
+        timeoutErr.name = "TimeoutError";
+        throw timeoutErr;
+      }
+      return { status: 404, body: "{}" };
+    };
+
+    const originalUrl = "https://turbobit.net/download/abc123.zip";
+    const ctx = {
+      type: "http",
+      uris: [originalUrl],
+      update: (patch) => { Object.assign(ctx, patch); }
+    };
+
+    const result = await state.beforeCreateHook(ctx);
+
+    assert.equal(result.uris[0], originalUrl, "Original URL must remain untouched on timeout");
+  });
+
+  it("respects showNotification: false config setting upon successful unrestrict", async () => {
+    state.configStore.set("apiKey", "VALID_KEY");
+    state.configStore.set("showNotification", false);
+
+    state.httpMockResponse = (opts) => {
+      if (opts.url.includes("/hosts/domains")) {
+        return { status: 200, body: JSON.stringify(["rapidgator.net"]) };
+      }
+      return {
+        status: 200,
+        body: JSON.stringify({
+          download: "https://12.download.real-debrid.com/d/XYZ/video.mp4",
+          filename: "video.mp4"
+        })
+      };
+    };
+
+    const ctx = {
+      type: "http",
+      uris: ["https://rapidgator.net/file/xyz"],
+      update: (patch) => { Object.assign(ctx, patch); }
+    };
+
+    const result = await state.beforeCreateHook(ctx);
+
+    assert.equal(result.uris[0], "https://12.download.real-debrid.com/d/XYZ/video.mp4");
+    assert.equal(state.notifications.length, 0, "No notification should be emitted when showNotification is false");
+  });
+});
+
+describe("Account Status Verification (checkAccount) & Lifecycle Commands", () => {
+  beforeEach(() => {
+    resetMockState();
+    resetHostsCache();
+  });
+
+  it("verifies active premium account, formats date, and emits success notification", async () => {
+    state.httpMockResponse = {
+      status: 200,
+      body: JSON.stringify({
+        id: 12345,
+        username: "tester_pro",
+        email: "tester@example.com",
+        type: "premium",
+        expiration: "2028-06-15T12:00:00.000Z"
+      })
+    };
+
+    const user = await checkAccount("PREMIUM_TOKEN", true);
+
+    assert.ok(user);
+    assert.equal(user.username, "tester_pro");
+    assert.equal(user.type, "premium");
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — Premium Active");
+    assert.ok(state.notifications[0].body.includes("tester_pro"));
+    assert.ok(state.notifications[0].body.includes("15/06/2028"));
+  });
+
+  it("detects free/non-premium account and emits warning notification", async () => {
+    state.httpMockResponse = {
+      status: 200,
+      body: JSON.stringify({
+        id: 54321,
+        username: "tester_free",
+        type: "free",
+        expiration: null
+      })
+    };
+
+    const user = await checkAccount("FREE_TOKEN", true);
+
+    assert.ok(user);
+    assert.equal(user.type, "free");
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — Non-Premium");
+    assert.ok(state.notifications[0].body.includes("tester_free"));
+  });
+
+  it("handles authentication failure (HTTP 401/403) and emits authError notification", async () => {
+    state.httpMockResponse = {
+      status: 401,
+      body: JSON.stringify({ error: "bad_token" })
+    };
+
+    const user = await checkAccount("INVALID_TOKEN", true);
+
+    assert.equal(user, null);
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — Authentication Error");
+    assert.ok(state.notifications[0].body.includes("bad_token"));
+  });
+
+  it("handles network exception during account verification gracefully", async () => {
+    state.httpMockResponse = () => {
+      throw new Error("Network unreachable");
+    };
+
+    const user = await checkAccount("ANY_TOKEN", true);
+
+    assert.equal(user, null);
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — Error");
+  });
+
+  it("registers and executes community.realdebrid-resolver.checkAccount command", async () => {
+    state.configStore.set("apiKey", "VALID_CMD_TOKEN");
+    state.httpMockResponse = {
+      status: 200,
+      body: JSON.stringify({
+        id: 9999,
+        username: "command_user",
+        type: "premium",
+        expiration: "2027-01-01T00:00:00.000Z"
+      })
+    };
+
+    const handler = state.registeredCommands.get("community.realdebrid-resolver.checkAccount");
+    assert.ok(typeof handler === "function", "Command must be registered");
+
+    await handler();
+
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — Premium Active");
+  });
+});
+
+describe("URL & Authority Parsing Edge Cases (extractHostname)", () => {
+  it("extracts bracketed IPv6 hostnames with and without ports", () => {
+    assert.equal(extractHostname("http://[2001:db8::1]/path"), "[2001:db8::1]");
+    assert.equal(extractHostname("http://[2001:db8::1]:8080/path"), "[2001:db8::1]");
+    assert.equal(extractHostname("http://user:pass@[::1]:3000/download"), "[::1]");
+  });
+
+  it("returns empty string for empty, null, invalid, or non-hierarchical URLs", () => {
+    assert.equal(extractHostname(null), "");
+    assert.equal(extractHostname(undefined), "");
+    assert.equal(extractHostname(""), "");
+    assert.equal(extractHostname("   "), "");
+    assert.equal(extractHostname("not-a-valid-url"), "");
+    assert.equal(extractHostname("javascript:alert(1)"), "");
   });
 });

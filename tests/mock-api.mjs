@@ -1,4 +1,14 @@
 // Mock implementation of native "motrix:plugin-api" for automated test suites
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+let translations = {};
+try {
+  const raw = fs.readFileSync(path.resolve(__dirname, "../locales/en-US.json"), "utf8");
+  translations = JSON.parse(raw);
+} catch {}
 
 export const state = {
   registeredCommands: new Map(),
@@ -51,8 +61,8 @@ export const i18n = {
   language: "en-US",
   dir: "ltr",
   t: (key, params) => {
-    if (!params) return key;
-    let res = key;
+    let res = translations[key] ?? key;
+    if (!params) return res;
     for (const [k, v] of Object.entries(params)) {
       res = res.replace(new RegExp(`{{${k}}}`, "g"), String(v));
     }
