@@ -132,9 +132,13 @@ describe("Network Security, Bearer Auth & Diagnostic Sanitization", () => {
     assert.equal(state.httpRequests.length, 1);
     const req = state.httpRequests[0];
     assert.equal(req.method, "POST");
-    assert.equal(req.headers?.Authorization, `Bearer ${secretKey}`);
+    const authHeader = Array.isArray(req.headers)
+      ? req.headers.find(h => h.name === "Authorization")?.value
+      : req.headers?.Authorization;
+    assert.equal(authHeader, `Bearer ${secretKey}`);
     assert.equal(req.url.includes(secretKey), false, "API key must not appear in URL query string");
-    assert.equal(req.body.includes(secretKey), false, "API key must not appear in POST body");
+    const bodyStr = typeof req.body === "object" ? req.body.data : req.body;
+    assert.equal(bodyStr.includes(secretKey), false, "API key must not appear in POST body");
   });
 
   it("never leaks sensitive URLs or tokens in diagnostic logs", async () => {

@@ -155,9 +155,9 @@ async function checkAccount(apiKey, triggerNotification = false) {
     const res = await http.request({
       method: "GET",
       url: `${API_BASE}/user`,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: [
+        { name: "Authorization", value: `Bearer ${apiKey}` },
+      ],
       responseType: "text",
       timeoutMs: 8000,
     });
@@ -312,11 +312,14 @@ async function unrestrictLink(link, apiKey) {
   const res = await http.request({
     method: "POST",
     url: `${API_BASE}/unrestrict/link`,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/x-www-form-urlencoded",
+    headers: [
+      { name: "Content-Type", value: "application/x-www-form-urlencoded" },
+      { name: "Authorization", value: `Bearer ${apiKey}` },
+    ],
+    body: {
+      type: "string",
+      data: postData,
     },
-    body: postData,
     responseType: "text",
     timeoutMs: 15000,
   });
