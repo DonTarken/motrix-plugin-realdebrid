@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "community.realdebrid-resolver",
   "name": "%name%",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "%description%",
   "author": "DonTarken",
   "homepage": "https://github.com/DonTarken/motrix-plugin-realdebrid",
@@ -41,8 +41,7 @@
             "type": "string",
             "title": "%settings.apiKey.title%",
             "description": "%settings.apiKey.desc%",
-            "default": "",
-            "secret": true
+            "default": ""
           },
           "enabled": {
             "type": "boolean",

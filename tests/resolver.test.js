@@ -348,9 +348,10 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
     const result = await state.beforeCreateHook(ctx);
 
     assert.equal(result.uris[0], originalUrl, "Original URL must remain untouched on API error");
-    assert.equal(state.notifications.length, 0, "No success notification should be emitted");
+    assert.equal(state.notifications.length, 1, "An error notification should be emitted to alert the user");
+    assert.equal(state.notifications[0].icon, "error");
     assert.ok(
-      state.logs.some(l => l.msg.includes("could not be unrestricted")),
+      state.logs.some(l => l.msg.includes("could not be unrestricted") || l.msg.includes("Debriding failed")),
       "Diagnostic log should record the unrestrict failure"
     );
   });

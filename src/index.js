@@ -141,9 +141,25 @@ async function getApiKey() {
   try {
     const key = await config.get("apiKey");
     if (typeof key === "string" && key.trim().length > 0) {
-      return key.trim();
+      const trimmed = key.trim();
+      if (trimmed.startsWith("box:")) {
+        log.warn(
+          "Real-Debrid: The stored API key is an old encrypted token ('box:...'). Please re-enter your key in Settings and click Apply."
+        );
+        try {
+          await notify.show({
+            title: t("notif.configRequired.title"),
+            body: t("notif.keyNeedsReentry.body"),
+            icon: "warning",
+          });
+        } catch {}
+        return "";
+      }
+      return trimmed;
     }
-  } catch {}
+  } catch (err) {
+    log.error("Real-Debrid: Failed to retrieve API key", { err: String(err) });
+  }
   return "";
 }
 
@@ -309,34 +325,51 @@ function isSupportedHost(url, domains) {
 async function unrestrictLink(link, apiKey) {
   const postData = `link=${encodeURIComponent(link)}`;
 
-  const res = await http.request({
-    method: "POST",
-    url: `${API_BASE}/unrestrict/link`,
-    headers: [
-      { name: "Content-Type", value: "application/x-www-form-urlencoded" },
-      { name: "Authorization", value: `Bearer ${apiKey}` },
-    ],
-    body: {
-      type: "string",
-      data: postData,
-    },
-    responseType: "text",
-    timeoutMs: 15000,
-  });
+  let res;
+  try {
+    res = await http.request({
+      method: "POST",
+      url: `${API_BASE}/unrestrict/link`,
+      headers: [
+        { name: "Content-Type", value: "application/x-www-form-urlencoded" },
+        { name: "Authorization", value: `Bearer ${apiKey}` },
+      ],
+      body: {
+        type: "string",
+        data: postData,
+      },
+      responseType: "text",
+      timeoutMs: 15000,
+    });
+  } catch (err) {
+    log.error("Real-Debrid: Network request failed during unrestrict", {
+      err: String(err),
+    });
+    return { ok: false, error: "network_error", message: String(err) };
+  }
 
   if (res.status !== 200) {
     let errorCode = `HTTP_${res.status}`;
+    let errorMessage = "HTTP error " + res.status;
     try {
       const errJson = JSON.parse(res.body);
       if (errJson.error) errorCode = errJson.error;
+      if (errJson.message) errorMessage = errJson.message;
     } catch {}
-    log.info("Real-Debrid: Link could not be unrestricted", { code: errorCode });
-    return null;
+    log.warn("Real-Debrid: Link could not be unrestricted", { code: errorCode });
+    return { ok: false, error: errorCode, message: errorMessage };
   }
 
-  const parsed = JSON.parse(res.body);
+  let parsed;
+  try {
+    parsed = JSON.parse(res.body);
+  } catch (err) {
+    return { ok: false, error: "invalid_response", message: "Invalid JSON response" };
+  }
+
   if (parsed.download) {
     return {
+      ok: true,
       directUrl: parsed.download,
       filename: parsed.filename,
       filesize: parsed.filesize,
@@ -345,13 +378,14 @@ async function unrestrictLink(link, apiKey) {
   }
 
   if (parsed.error) {
-    log.info("Real-Debrid: Link could not be unrestricted", {
+    log.warn("Real-Debrid: Link could not be unrestricted", {
       code: parsed.error,
       message: parsed.message,
     });
+    return { ok: false, error: parsed.error, message: parsed.message };
   }
 
-  return null;
+  return { ok: false, error: "unknown", message: "No download URL returned" };
 }
 
 /**
@@ -394,7 +428,7 @@ hooks.beforeCreate(async (ctx) => {
     });
     const result = await unrestrictLink(originalUrl, apiKey);
 
-    if (result && result.directUrl) {
+    if (result && result.ok && result.directUrl) {
       log.info("Real-Debrid: Link unrestricted successfully", {
         host: extractHostname(result.directUrl),
         filename: result.filename,
@@ -416,6 +450,30 @@ hooks.beforeCreate(async (ctx) => {
           });
         } catch {}
       }
+    } else if (result && !result.ok) {
+      // Unrestrict failed with an API error (e.g. hoster_not_free, bad_token, etc.)
+      const errorCode = result.error || "unknown";
+      let errorBody = result.message || errorCode;
+
+      if (errorCode === "hoster_not_free") {
+        errorBody = t("notif.error.hosterNotFree");
+      } else if (errorCode === "bad_token") {
+        errorBody = t("notif.error.badToken");
+      }
+
+      log.warn("Real-Debrid: Debriding failed, alerting user", {
+        code: errorCode,
+        message: errorBody,
+      });
+
+      try {
+        await notify.show({
+          title: t("notif.unrestrictFailed.title"),
+          body: errorBody,
+          icon: "error",
+          urgency: "normal",
+        });
+      } catch {}
     }
   } catch (err) {
     log.error("Real-Debrid: Unexpected error", { err: String(err) });
