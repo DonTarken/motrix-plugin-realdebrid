@@ -8,6 +8,7 @@ import {
   getSupportedDomains,
   resetHostsCache,
   getApiKey,
+  extractKeyFromSetupUrl,
   checkAccount
 } from "../src/index.js";
 import { state, resetMockState } from "./mock-api.mjs";
@@ -305,8 +306,16 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
     assert.equal(result.uris[0], "https://rapidgator.net/file/123");
   });
 
-  it("warns user via notification when API key is missing and preserves original download", async () => {
+  it("warns user via notification and aborts task when API key is missing on supported host", async () => {
     state.configStore.delete("apiKey");
+    state.storageStore.delete("apiKey");
+
+    state.httpMockResponse = (opts) => {
+      if (opts.url.includes("/hosts/domains")) {
+        return { status: 200, body: JSON.stringify(["rapidgator.net"]) };
+      }
+      return { status: 404, body: "{}" };
+    };
 
     const ctx = {
       type: "http",
@@ -314,15 +323,16 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
       update: (patch) => { Object.assign(ctx, patch); }
     };
 
-    const result = await state.beforeCreateHook(ctx);
+    await assert.rejects(
+      async () => { await state.beforeCreateHook(ctx); },
+      /Real-Debrid: No API key configured/
+    );
 
-    assert.equal(state.httpRequests.length, 0, "No network request when API key is missing");
-    assert.equal(result.uris[0], "https://rapidgator.net/file/123");
     assert.equal(state.notifications.length, 1);
     assert.equal(state.notifications[0].title, "Real-Debrid — Configuration Required");
   });
 
-  it("falls back gracefully when Real-Debrid API returns error (free account, bad token, dead link)", async () => {
+  it("aborts task with error notification when Real-Debrid API returns error (free account, bad token, dead link)", async () => {
     state.configStore.set("apiKey", "FREE_OR_INVALID_KEY");
 
     state.httpMockResponse = (opts) => {
@@ -345,18 +355,20 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
       update: (patch) => { Object.assign(ctx, patch); }
     };
 
-    const result = await state.beforeCreateHook(ctx);
+    await assert.rejects(
+      async () => { await state.beforeCreateHook(ctx); },
+      /Real-Debrid: Debriding failed/
+    );
 
-    assert.equal(result.uris[0], originalUrl, "Original URL must remain untouched on API error");
     assert.equal(state.notifications.length, 1, "An error notification should be emitted to alert the user");
     assert.equal(state.notifications[0].icon, "error");
     assert.ok(
-      state.logs.some(l => l.msg.includes("could not be unrestricted") || l.msg.includes("Debriding failed")),
+      state.logs.some(l => l.msg.includes("Debriding failed")),
       "Diagnostic log should record the unrestrict failure"
     );
   });
 
-  it("falls back gracefully when Real-Debrid unrestrict request throws network timeout", async () => {
+  it("aborts task when Real-Debrid unrestrict request throws network timeout", async () => {
     state.configStore.set("apiKey", "VALID_KEY");
 
     state.httpMockResponse = (opts) => {
@@ -378,9 +390,10 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
       update: (patch) => { Object.assign(ctx, patch); }
     };
 
-    const result = await state.beforeCreateHook(ctx);
-
-    assert.equal(result.uris[0], originalUrl, "Original URL must remain untouched on timeout");
+    await assert.rejects(
+      async () => { await state.beforeCreateHook(ctx); },
+      /Real-Debrid: Debriding failed/
+    );
   });
 
   it("respects showNotification: false config setting upon successful unrestrict", async () => {
@@ -524,5 +537,64 @@ describe("URL & Authority Parsing Edge Cases (extractHostname)", () => {
     assert.equal(extractHostname("   "), "");
     assert.equal(extractHostname("not-a-valid-url"), "");
     assert.equal(extractHostname("javascript:alert(1)"), "");
+  });
+});
+
+describe("API Key Extraction & Storage Persistence", () => {
+  const sampleKey = "2E6IYTRT5LQVVV7AV6PRX6I5MNLTURH6WW6RP77NXJH3YVXN6TIQ";
+
+  beforeEach(() => {
+    resetMockState();
+    resetHostsCache();
+  });
+
+  it("extracts API key from various setup URL formats", () => {
+    assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/set-key/${sampleKey}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/?token=${sampleKey}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/?apikey=${sampleKey}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/apitoken?key=${sampleKey}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl(`rd://${sampleKey}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl(`rd://set-key/${sampleKey}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl("https://rapidgator.net/file/123"), null);
+  });
+
+  it("reads API key from storage when config is empty", async () => {
+    state.configStore.delete("apiKey");
+    state.storageStore.set("apiKey", sampleKey);
+
+    const key = await getApiKey();
+    assert.equal(key, sampleKey);
+  });
+
+  it("intercepts setup URL in beforeCreate, validates key, saves to storage, and aborts download", async () => {
+    state.storageStore.delete("apiKey");
+    state.httpMockResponse = (opts) => {
+      if (opts.url.includes("/user")) {
+        return {
+          status: 200,
+          body: JSON.stringify({
+            username: "johndoe",
+            type: "premium",
+            expiration: "2027-01-01T00:00:00.000Z"
+          })
+        };
+      }
+      return { status: 404, body: "{}" };
+    };
+
+    const ctx = {
+      type: "http",
+      uris: [`https://real-debrid.com/set-key/${sampleKey}`],
+      update: () => {}
+    };
+
+    await assert.rejects(
+      async () => { await state.beforeCreateHook(ctx); },
+      /Clé API enregistrée avec succès/
+    );
+
+    assert.equal(state.storageStore.get("apiKey"), sampleKey);
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — API Key Saved");
   });
 });

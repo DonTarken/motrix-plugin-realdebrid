@@ -136,31 +136,71 @@ function getDaysRemaining(exp) {
   return 0;
 }
 
-// Retrieve API Token from configuration
+// Retrieve API Token from configuration (Settings UI) or SQLite storage
 async function getApiKey() {
+  // 1. Check configuration (Settings UI)
   try {
     const key = await config.get("apiKey");
     if (typeof key === "string" && key.trim().length > 0) {
       const trimmed = key.trim();
-      if (trimmed.startsWith("box:")) {
-        log.warn(
-          "Real-Debrid: The stored API key is an old encrypted token ('box:...'). Please re-enter your key in Settings and click Apply."
-        );
-        try {
-          await notify.show({
-            title: t("notif.configRequired.title"),
-            body: t("notif.keyNeedsReentry.body"),
-            icon: "warning",
-          });
-        } catch {}
-        return "";
+      if (!trimmed.startsWith("box:")) {
+        return trimmed;
       }
-      return trimmed;
     }
-  } catch (err) {
-    log.error("Real-Debrid: Failed to retrieve API key", { err: String(err) });
-  }
+  } catch {}
+
+  // 2. Check persistent SQLite storage (works across all Motrix builds)
+  try {
+    const stored = await storage.get("apiKey");
+    if (typeof stored === "string" && stored.trim().length > 0) {
+      return stored.trim();
+    }
+    if (stored && typeof stored.value === "string" && stored.value.trim().length > 0) {
+      return stored.value.trim();
+    }
+  } catch {}
+
   return "";
+}
+
+// Extract API key from one-time setup URLs (e.g. rd://<key> or https://real-debrid.com/set-key/<key>)
+function extractKeyFromSetupUrl(url) {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+
+  // Scheme: rd://<key> or rd://set-key/<key> or rd:key:<key>
+  const rdSchemeMatch = trimmed.match(/^rd:(?:\/\/(?:set-key\/)?)?([A-Za-z0-9_-]{20,})/i);
+  if (rdSchemeMatch) return rdSchemeMatch[1];
+
+  // HTTP/HTTPS URL on real-debrid domains
+  try {
+    const match = trimmed.match(/^https?:\/\/([^/?#]+)([^?#]*)(?:\?([^#]*))?/i);
+    if (!match) return null;
+    const host = match[1].toLowerCase();
+    if (host !== "real-debrid.com" && host !== "api.real-debrid.com") return null;
+
+    const pathname = match[2] || "";
+    const search = match[3] || "";
+
+    // Path /set-key/<key>
+    const pathMatch = pathname.match(/^\/set-?key\/([A-Za-z0-9_-]{20,})/i);
+    if (pathMatch) return pathMatch[1];
+
+    // Query param ?token=<key> or ?apikey=<key> or ?key=<key>
+    if (search) {
+      const params = search.split("&");
+      for (const p of params) {
+        const [k, v] = p.split("=");
+        if (["token", "apikey", "api_key", "key"].includes(k?.toLowerCase())) {
+          if (v && /^[A-Za-z0-9_-]{20,}$/.test(v)) {
+            return decodeURIComponent(v);
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 // Check Real-Debrid account status via /rest/1.0/user
@@ -395,34 +435,81 @@ hooks.beforeCreate(async (ctx) => {
   if (ctx.type !== "http") return ctx;
 
   const originalUrl = ctx.uris?.[0];
-  if (!originalUrl || shouldSkip(originalUrl)) return ctx;
+  if (!originalUrl) return ctx;
+
+  // 1. One-time setup command URL: paste https://real-debrid.com/set-key/<TOKEN> into Motrix
+  const setupKey = extractKeyFromSetupUrl(originalUrl);
+  if (setupKey) {
+    log.info("Real-Debrid: Processing API key configuration via setup URL");
+    const account = await checkAccount(setupKey, false);
+    if (account && account.username) {
+      await storage.set("apiKey", setupKey);
+      log.info("Real-Debrid: API key registered successfully in storage", {
+        username: account.username,
+      });
+      try {
+        await notify.show({
+          title: t("notif.keyRegistered.title"),
+          body: t("notif.keyRegistered.body", {
+            username: account.username,
+            expDate: formatExpiration(account.expiration),
+          }),
+          icon: "success",
+          urgency: "high",
+        });
+      } catch {}
+      throw new Error(
+        `Real-Debrid: Clé API enregistrée avec succès pour ${account.username} ! Téléchargement ignoré.`
+      );
+    } else {
+      log.warn("Real-Debrid: Invalid API key provided in setup URL");
+      try {
+        await notify.show({
+          title: t("notif.configRequired.title"),
+          body: t("notif.invalidKey.body"),
+          icon: "error",
+          urgency: "high",
+        });
+      } catch {}
+      throw new Error("Real-Debrid: Token API Real-Debrid invalide. Téléchargement ignoré.");
+    }
+  }
+
+  // 2. Standard exclusions (local addresses, magnets, debrid services)
+  if (shouldSkip(originalUrl)) return ctx;
 
   const enabled = await config.get("enabled");
   if (enabled === false) return ctx;
 
+  // 3. Supported host check (fail-closed)
+  const domains = await getSupportedDomains();
+  if (!isSupportedHost(originalUrl, domains)) {
+    log.debug("Real-Debrid: Unsupported host, skipping", {
+      host: extractHostname(originalUrl),
+    });
+    return ctx;
+  }
+
+  // 4. Host is supported — an API key is strictly required
   const apiKey = await getApiKey();
   if (!apiKey) {
-    log.warn("Real-Debrid: No API key configured.");
+    log.warn("Real-Debrid: No API key configured for supported host", {
+      host: extractHostname(originalUrl),
+    });
     try {
       await notify.show({
         title: t("notif.configRequired.title"),
         body: t("notif.configRequired.body"),
         icon: "warning",
-        urgency: "low",
+        urgency: "high",
       });
     } catch {}
-    return ctx;
+    throw new Error(
+      "Real-Debrid: No API key configured. Task aborted to prevent downloading HTML page."
+    );
   }
 
   try {
-    const domains = await getSupportedDomains();
-    if (!isSupportedHost(originalUrl, domains)) {
-      log.debug("Real-Debrid: Unsupported host, skipping", {
-        host: extractHostname(originalUrl),
-      });
-      return ctx;
-    }
-
     log.info("Real-Debrid: Unrestricting link...", {
       host: extractHostname(originalUrl),
     });
@@ -450,36 +537,44 @@ hooks.beforeCreate(async (ctx) => {
           });
         } catch {}
       }
-    } else if (result && !result.ok) {
-      // Unrestrict failed with an API error (e.g. hoster_not_free, bad_token, etc.)
-      const errorCode = result.error || "unknown";
-      let errorBody = result.message || errorCode;
-
-      if (errorCode === "hoster_not_free") {
-        errorBody = t("notif.error.hosterNotFree");
-      } else if (errorCode === "bad_token") {
-        errorBody = t("notif.error.badToken");
-      }
-
-      log.warn("Real-Debrid: Debriding failed, alerting user", {
-        code: errorCode,
-        message: errorBody,
-      });
-
-      try {
-        await notify.show({
-          title: t("notif.unrestrictFailed.title"),
-          body: errorBody,
-          icon: "error",
-          urgency: "normal",
-        });
-      } catch {}
+      return ctx;
     }
-  } catch (err) {
-    log.error("Real-Debrid: Unexpected error", { err: String(err) });
-  }
 
-  return ctx;
+    // Unrestrict failed with an API error (e.g. hoster_not_free, bad_token, etc.)
+    const errorCode = result?.error || "unknown";
+    let errorBody = result?.message || errorCode;
+
+    if (errorCode === "hoster_not_free") {
+      errorBody = t("notif.error.hosterNotFree");
+    } else if (errorCode === "bad_token") {
+      errorBody = t("notif.error.badToken");
+    }
+
+    log.warn("Real-Debrid: Debriding failed, aborting task to avoid HTML file download", {
+      code: errorCode,
+      message: errorBody,
+    });
+
+    try {
+      await notify.show({
+        title: t("notif.unrestrictFailed.title"),
+        body: errorBody,
+        icon: "error",
+        urgency: "normal",
+      });
+    } catch {}
+
+    throw new Error(
+      `Real-Debrid: Debriding failed (${errorCode}: ${errorBody}). Task aborted to prevent downloading HTML page.`
+    );
+  } catch (err) {
+    // If it's our own intentional error aborting the task, rethrow so Motrix aborts it
+    if (String(err).includes("Real-Debrid:")) {
+      throw err;
+    }
+    log.error("Real-Debrid: Unexpected error", { err: String(err) });
+    return ctx;
+  }
 });
 
 /**
@@ -503,5 +598,6 @@ export {
   getSupportedDomains,
   resetHostsCache,
   getApiKey,
+  extractKeyFromSetupUrl,
   checkAccount,
 };
