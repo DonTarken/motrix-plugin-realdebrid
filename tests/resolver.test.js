@@ -375,12 +375,12 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
 
     await assert.rejects(
       async () => { await state.beforeCreateHook(ctx); },
-      /Debriding failed \(hoster_not_free\)/
+      /Real-Debrid Premium subscription required/
     );
 
     assert.equal(state.notifications.length, 1);
     assert.equal(state.notifications[0].icon, "error");
-    assert.ok(state.notifications[0].body.includes("hoster_not_free"));
+    assert.ok(state.notifications[0].body.includes("Real-Debrid Premium subscription required"));
   });
 
   it("maps Real-Debrid REST API error codes cleanly", () => {
@@ -388,6 +388,7 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
     assert.ok(formatUnrestrictError("hoster_unsupported", "").includes("not supported"));
     assert.ok(formatUnrestrictError("hoster_maintenance", "").includes("maintenance"));
     assert.ok(formatUnrestrictError("traffic_exhausted", "").includes("traffic"));
+    assert.ok(formatUnrestrictError("network_error", "").includes("Real-Debrid servers"));
     assert.ok(formatUnrestrictError("unknown_code_xyz", "HTTP error 503").includes("unknown_code_xyz"));
   });
 
@@ -414,8 +415,63 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
 
     await assert.rejects(
       async () => { await state.beforeCreateHook(ctx); },
-      /Debriding failed \(network_error\)/
+      /Unable to reach Real-Debrid servers/
     );
+  });
+
+  it("passes original URL through when blockOnFailure is false (unrestrict error & missing key)", async () => {
+    state.storageStore.set("blockOnFailure", false);
+    state.httpMockResponse = (opts) => {
+      if (opts.url.includes("/hosts/domains")) {
+        return { status: 200, body: JSON.stringify(["turbobit.net"]) };
+      }
+      if (opts.url.includes("/unrestrict/link")) {
+        return {
+          status: 403,
+          body: JSON.stringify({ error: "hoster_not_free", error_code: 20 })
+        };
+      }
+      return { status: 404, body: "{}" };
+    };
+
+    // 1. Missing API key notifies without aborting
+    const ctxMissing = {
+      type: "http",
+      uris: ["https://turbobit.net/download/missing.zip"],
+      update: (patch) => { Object.assign(ctxMissing, patch); }
+    };
+    const resMissing = await state.beforeCreateHook(ctxMissing);
+    assert.equal(resMissing.uris[0], "https://turbobit.net/download/missing.zip");
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — Configuration Required");
+
+    // 2. Unrestrict failure notifies with cleaned reason without aborting
+    resetMockState();
+    state.storageStore.set("apiKey", "FREE_OR_INVALID_KEY");
+    state.storageStore.set("blockOnFailure", false);
+    state.httpMockResponse = (opts) => {
+      if (opts.url.includes("/hosts/domains")) {
+        return { status: 200, body: JSON.stringify(["turbobit.net"]) };
+      }
+      if (opts.url.includes("/unrestrict/link")) {
+        return {
+          status: 403,
+          body: JSON.stringify({ error: "hoster_not_free", error_code: 20 })
+        };
+      }
+      return { status: 404, body: "{}" };
+    };
+
+    const ctxFail = {
+      type: "http",
+      uris: ["https://turbobit.net/download/abc123.zip"],
+      update: (patch) => { Object.assign(ctxFail, patch); }
+    };
+    const resFail = await state.beforeCreateHook(ctxFail);
+    assert.equal(resFail.uris[0], "https://turbobit.net/download/abc123.zip");
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].icon, "error");
+    assert.ok(state.notifications[0].body.includes("Real-Debrid Premium subscription required"));
   });
 
   it("respects showNotification: false from storage or config upon successful unrestrict", async () => {
@@ -536,24 +592,28 @@ describe("Account Status Verification (checkAccount) & Operations UI", () => {
     const res = await handler({
       apiKey: sampleKey,
       enabled: true,
+      blockOnFailure: false,
       showNotification: false
     });
 
     assert.equal(state.storageStore.get("apiKey"), sampleKey);
     assert.equal(state.storageStore.get("enabled"), true);
+    assert.equal(state.storageStore.get("blockOnFailure"), false);
     assert.equal(state.storageStore.get("showNotification"), false);
+    assert.ok(res.settings.includes("Block on failure: OFF"));
     assert.equal(res.username, "dontarken");
     assert.equal(res.accountType, "Premium");
     assert.ok(res.expiration.includes("01/01/2028"));
     assert.equal(state.notifications.length, 0, "Respects showNotification: false");
 
-    // Re-running with blank apiKey checks the previously stored key
+    // Re-running with blank apiKey checks the previously stored key & keeps omitted blockOnFailure
     const res2 = await handler({
       apiKey: "",
       enabled: false,
       showNotification: true
     });
     assert.equal(state.storageStore.get("enabled"), false);
+    assert.equal(state.storageStore.get("blockOnFailure"), false);
     assert.equal(res2.status, "Verified using saved token");
     assert.equal(state.notifications.length, 1);
   });
@@ -707,7 +767,7 @@ describe("API Key Setup URLs & SQLite Storage Persistence", () => {
     state.httpMockResponse = () => { throw new Error("timeout"); };
     await assert.rejects(
       async () => { await state.beforeCreateHook(ctx); },
-      /network error/
+      /Unable to reach Real-Debrid servers/
     );
   });
 });
@@ -720,7 +780,7 @@ describe("Manifest & Locales Structural Integrity", () => {
     const fr = JSON.parse(fs.readFileSync(path.join(rootDir, "locales/fr.json"), "utf8"));
 
     assert.equal(manifest.id, "community.realdebrid-resolver");
-    assert.equal(manifest.version, "1.0.5");
+    assert.equal(manifest.version, "1.0.6");
     assert.equal(manifest.activationEvents.includes("onStartup"), false);
     assert.equal(manifest.contributes.configuration, undefined);
     assert.ok(manifest.contributes.operations?.items?.length === 1);

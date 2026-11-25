@@ -65,6 +65,7 @@ This autonomous plugin (`.moext`) turns Motrix into a fast, lightweight alternat
 3. Open the **Operations** tab (**Account & Settings**).
 4. Paste your API token into **Real-Debrid API Token** and click **Save & Verify**.
 5. Motrix verifies your account immediately and displays your plan & expiration right on screen!
+   *(You can also toggle **Block download if unrestricting fails** in Operations if you prefer links to pass through on error instead of triggering Motrix's 3-failure auto-disable rule.)*
 
 *(Alternative shortcut: pasting `https://real-debrid.com/set-key/YOUR_API_TOKEN` into Motrix's **Add Task (+)** dialog also saves your token directly.)*
 

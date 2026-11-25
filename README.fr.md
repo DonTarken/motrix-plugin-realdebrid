@@ -65,6 +65,7 @@ Ce plugin autonome (`.moext`) transforme Motrix en une alternative moderne, rapi
 3. Ouvrez l'onglet **Opérations** (**Compte & Paramètres**).
 4. Collez votre token dans **Token API Real-Debrid** et cliquez sur **Enregistrer et vérifier**.
 5. Motrix vérifie immédiatement votre compte et affiche votre offre ainsi que la date d'expiration !
+   *(Vous pouvez aussi décocher **Bloquer le téléchargement en cas d'échec** dans Opérations si vous préférez laisser passer le lien d'origine en cas d'erreur sans risquer la coupure automatique de Motrix après 3 échecs.)*
 
 *(Raccourci alternatif : coller `https://real-debrid.com/set-key/VOTRE_TOKEN_API` dans **Ajouter un téléchargement (+)** enregistre également votre token directement.)*
 

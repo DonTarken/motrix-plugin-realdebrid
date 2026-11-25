@@ -517,9 +517,11 @@ function formatUnrestrictError(errorCode, fallbackMessage) {
     case "traffic_exhausted":
     case "fair_usage_limit":
       return t("notif.error.trafficExhausted");
+    case "network_error":
+      return t("notif.error.networkError");
     default:
       if (fallbackMessage && !fallbackMessage.startsWith("HTTP error")) {
-        return `${fallbackMessage} (${errorCode})`;
+        return `${fallbackMessage} — ${errorCode}`;
       }
       return t("notif.error.apiCode", { code: errorCode });
   }
@@ -678,13 +680,17 @@ hooks.beforeCreate(async (ctx) => {
     log.warn("Real-Debrid: No API key configured for supported host", {
       host: extractHostname(originalUrl),
     });
+    const blockOnFailure = await getBooleanSetting("blockOnFailure", true);
     await safeNotify({
       title: t("notif.configRequired.title"),
       body: t("notif.configRequired.body"),
       icon: "info",
       urgency: "normal",
     });
-    throw createAbortError(t("err.abort.missingKey"));
+    if (blockOnFailure) {
+      throw createAbortError(t("err.abort.missingKey"));
+    }
+    return ctx;
   }
 
   try {
@@ -718,9 +724,12 @@ hooks.beforeCreate(async (ctx) => {
     // Unrestrict failed with an API or network error
     const errorCode = result?.error || "unknown";
     const errorBody = formatUnrestrictError(errorCode, result?.message);
+    const blockOnFailure = await getBooleanSetting("blockOnFailure", true);
 
     log.warn(
-      "Real-Debrid: Debriding failed, aborting task to avoid HTML file download",
+      blockOnFailure
+        ? "Real-Debrid: Debriding failed, aborting task to avoid HTML file download"
+        : "Real-Debrid: Debriding failed, passing original URL through (blockOnFailure disabled)",
       { code: errorCode }
     );
 
@@ -731,7 +740,10 @@ hooks.beforeCreate(async (ctx) => {
       urgency: "normal",
     });
 
-    throw createAbortError(t("err.abort.unrestrictFailed", { code: errorCode }));
+    if (blockOnFailure) {
+      throw createAbortError(errorBody);
+    }
+    return ctx;
   } catch (err) {
     if (err?.isDebridAbort) {
       throw err;
@@ -748,13 +760,20 @@ commands.registerOperation(
   "community.realdebrid-resolver.account",
   async (args) => {
     const enabled =
-      typeof args?.enabled === "boolean" ? args.enabled : true;
+      typeof args?.enabled === "boolean"
+        ? args.enabled
+        : await getBooleanSetting("enabled", true);
+    const blockOnFailure =
+      typeof args?.blockOnFailure === "boolean"
+        ? args.blockOnFailure
+        : await getBooleanSetting("blockOnFailure", true);
     const showNotification =
       typeof args?.showNotification === "boolean"
         ? args.showNotification
-        : true;
+        : await getBooleanSetting("showNotification", true);
 
     await storage.set("enabled", enabled);
+    await storage.set("blockOnFailure", blockOnFailure);
     await storage.set("showNotification", showNotification);
 
     const providedKey =
@@ -803,7 +822,7 @@ commands.registerOperation(
       username: String(u.username || "unknown"),
       accountType: t(isPremium ? "op.plan.premium" : "op.plan.free"),
       expiration: expStr,
-      settings: `Auto-unrestrict: ${enabled ? "ON" : "OFF"} | Notifications: ${showNotification ? "ON" : "OFF"}`,
+      settings: `Auto-unrestrict: ${enabled ? "ON" : "OFF"} | Block on failure: ${blockOnFailure ? "ON" : "OFF"} | Notifications: ${showNotification ? "ON" : "OFF"}`,
     };
   }
 );
