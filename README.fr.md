@@ -24,12 +24,12 @@
 
 Vous utilisez **Motrix** comme gestionnaire de téléchargement et vous possédez un compte premium **Real-Debrid** ?
 
-Ce plugin officiel autonome (`.moext`) transforme Motrix en une alternative moderne, ultra-rapide et légère à **JDownloader** :
-- **Débridage 100% automatique** : collez vos liens (1fichier, Rapidgator, Turbobit, Mega, Katfile, etc.), Motrix les débride et lance le téléchargement immédiatement via l'API REST officielle Real-Debrid v1.0.
-- **Configuration simple par Token API** : un simple copier-coller de votre token API Real-Debrid dans les paramètres de l'extension et le tour est joué.
-- **Vitesse maximale** : sature votre connexion (jusqu'à 100+ Mo/s sur fibre) grâce au moteur multi-connexions Aria2.
-- **Compatibilité multi-résolveurs** : Conçu pour cohabiter proprement avec [motrix-plugin-alldebrid](https://github.com/DonTarken/motrix-plugin-alldebrid) sans aucun conflit.
-- **Testé & Robuste** : Suite complète de 15 tests unitaires automatisés validant la sécurité fail-closed, l'authentification Bearer et la résilience réseau.
+Ce plugin autonome (`.moext`) transforme Motrix en une alternative moderne, rapide et légère à **JDownloader** :
+- **Débridage 100 % automatique** : collez vos liens (1fichier, Rapidgator, Turbobit, Mega, Katfile, Nitroflare, etc.), Motrix les débride et lance le téléchargement direct via l'API REST officielle Real-Debrid v1.0.
+- **Configuration intégrée dans Motrix** : enregistrez et testez votre token API directement depuis l'onglet **Opérations** de l'extension dans Motrix.
+- **Protection contre les pages HTML** : si un lien ne peut pas être débridé (abonnement inactif, fichier mort, clé manquante), Motrix annule le téléchargement et vous alerte au lieu de télécharger une page HTML.
+- **Vitesse maximale** : exploite pleinement votre connexion via le moteur multi-connexions Aria2.
+- **Suite de tests automatisés** : valide la politique fail-closed, l'isolation Bearer, la conformité au schéma Motrix et la gestion des erreurs.
 
 ---
 
@@ -40,36 +40,41 @@ Ce plugin officiel autonome (`.moext`) transforme Motrix en une alternative mode
 #### Méthode A : Directement via GitHub (Recommandée — la plus simple)
 1. Ouvrez **Motrix** et cliquez sur l'onglet **« Extensions »** dans la barre latérale gauche (icône 📦 sous *Trackers*).
 2. Cliquez sur le bouton **`+`** tout en haut à droite pour ouvrir la fenêtre *« Ajouter une extension »*.
-3. Dans le champ, saisissez simplement le nom du dépôt :
+3. Saisissez le nom du dépôt :
    ```text
    DonTarken/motrix-plugin-realdebrid
    ```
-   *(Le badge en-dessous indiquera **`Type détecté : GitHub`** — ne mettez pas `https://` devant pour que Motrix interroge directement les releases GitHub).*
-4. Cliquez sur la loupe 🔍 en bas à droite (ou appuyez sur Entrée). Motrix téléchargera automatiquement la release officielle et vous demandera de confirmer l'installation !
+   *(Ne mettez pas `https://` devant pour que Motrix interroge directement les releases GitHub).*
+4. Cliquez sur la loupe 🔍 (ou Entrée) puis confirmez l'installation.
 
 ---
 
 #### 📁 Méthode B : Via le fichier `.moext` local
 1. 👉 **[Télécharger `realdebrid-resolver.moext`](https://github.com/DonTarken/motrix-plugin-realdebrid/releases/latest/download/realdebrid-resolver.moext)** (dernière version).
 2. Dans Motrix ➔ onglet **Extensions** ➔ cliquez sur le bouton **`+`** en haut à droite.
-3. **Glissez-déposez** le fichier téléchargé directement dans le champ, ou cliquez sur le trombone 📎 pour le sélectionner sur votre disque.
-4. Confirmez l'installation.
+3. **Glissez-déposez** le fichier téléchargé dans le champ (ou choisissez-le via le trombone 📎) et confirmez l'installation.
 
 ---
 
-### Étape 2 : Renseigner votre Token API Real-Debrid
-1. Sur la page **Extensions**, repérez la carte **Real-Debrid Resolver** et cliquez sur le bouton **« Ouvrir »**.
-2. Récupérez votre token API personnel sur votre compte Real-Debrid : **[real-debrid.com/apitoken](https://real-debrid.com/apitoken)**.
-3. Collez votre token dans le champ **Token API Real-Debrid** et sauvegardez.
-4. Une notification vous confirme que votre **statut Premium est actif** avec vos jours restants. Vous êtes prêt à télécharger ! 🎉
+### Étape 2 : Enregistrer et vérifier votre Token API Real-Debrid
+
+> **Pourquoi passer par *Opérations* et non *Paramètres* ?** Motrix Desktop 2.4.x souffre actuellement d'un bug amont : les valeurs saisies dans l'onglet *Paramètres* ne sont pas transmises aux extensions au runtime. L'onglet **Opérations** enregistre votre clé de façon fiable dans le stockage SQLite local de Motrix.
+
+1. Récupérez votre token API personnel sur **[real-debrid.com/apitoken](https://real-debrid.com/apitoken)**.
+2. Dans Motrix, ouvrez **Extensions** ➔ **Real-Debrid Resolver**.
+3. Ouvrez l'onglet **Opérations** (**Compte & Paramètres**).
+4. Collez votre token dans **Token API Real-Debrid** et cliquez sur **Enregistrer et vérifier**.
+5. Motrix vérifie immédiatement votre compte et affiche votre offre ainsi que la date d'expiration !
+
+*(Raccourci alternatif : coller `https://real-debrid.com/set-key/VOTRE_TOKEN_API` dans **Ajouter un téléchargement (+)** enregistre également votre token directement.)*
 
 ---
 
 ## 💡 Utilisation au Quotidien
 
-* **Téléchargement unique :** Copiez n'importe quel lien hébergeur et collez-le dans Motrix (`Ctrl + N` ou bouton `+`).
+* **Téléchargement unique :** Collez n'importe quel lien hébergeur dans Motrix (`Ctrl + N` ou bouton `+`).
 * **Téléchargements par lot :** Collez 10, 20 ou 50 liens d'archives découpées (`.part01.rar`, `.part02.rar`...) ; tous les liens sont débridés et mis en file d'attente en parallèle.
-* **Extension de navigateur :** Utilisez l'extension Chrome ou Firefox de Motrix pour faire un clic droit **« Télécharger avec Motrix »** sur n'importe quel lien du web.
+* **Extension de navigateur :** Utilisez l'extension Chrome ou Firefox de Motrix pour faire un clic droit **« Télécharger avec Motrix »**.
 
 ---
 
@@ -81,58 +86,55 @@ Ce plugin officiel autonome (`.moext`) transforme Motrix en une alternative mode
 
 Si vous téléchargez de très gros fichiers (ex : vidéos de 20 à 60 Go), vérifiez où Motrix écrit :
 - **Privilégiez un SSD (SATA ou NVMe)** plutôt qu'un disque dur mécanique 5400 tr/min.
-- Sur un disque dur lent, l'allocation d'espace pour un fichier de 50 Go peut saturer les files d'attente Windows pendant plusieurs minutes.
-- Sur SSD, l'espace est alloué instantanément et la vitesse grimpe immédiatement à 90–115 Mo/s sur fibre gigabit.
+- Sur un disque dur lent, la pré-allocation d'espace peut saturer les files d'attente disque et retarder temporairement les statistiques Aria2.
 </details>
 
 <details>
 <summary><b>Quels hébergeurs sont supportés ?</b></summary>
 <br>
 
-Tous les hébergeurs pris en charge par votre abonnement Real-Debrid : 1fichier, Rapidgator, Turbobit, Mega, Katfile, DDownload, Uptobox, Filefactory, Nitroflare, etc. Le plugin met à jour la liste des domaines supportés toutes les heures.
+Tous les hébergeurs pris en charge par votre compte Real-Debrid (plus de 280 domaines : 1fichier, Rapidgator, Turbobit, Mega, Katfile, DDownload, Filefactory, Nitroflare, etc.). La liste est rafraîchie automatiquement toutes les heures.
+</details>
+
+<details>
+<summary><b>Pourquoi le plugin demande-t-il l'accès hôte (*://*/*) ?</b></summary>
+<br>
+
+Motrix vérifie `hostPermissions` avant même de déclencher le hook `beforeCreate`. Comme Real-Debrid supporte plus de 280 domaines récupérés dynamiquement, ce motif générique est nécessaire pour que Motrix transmette les liens entrants au plugin. **Sécurité fail-closed** : le plugin filtre d'abord en local contre la liste officielle Real-Debrid, et les liens non supportés ne sont jamais envoyés à Real-Debrid.
 </details>
 
 <details>
 <summary><b>Mes identifiants sont-ils en sécurité ?</b></summary>
 <br>
 
-**À 100 %.** Le plugin ne demande ni n'accède jamais à votre mot de passe Real-Debrid. Votre token API est stocké localement sur votre machine dans les données sécurisées de Motrix et n'est transmis qu'aux serveurs officiels de Real-Debrid via un en-tête `Authorization: Bearer`.
+**Oui.** Le plugin ne demande jamais votre mot de passe Real-Debrid. Votre token API reste stocké localement sur votre machine et n'est transmis qu'à `api.real-debrid.com` via l'en-tête `Authorization: Bearer`.
 </details>
 
 ---
 
 ## 🐛 Retours, Tests & Signalements
 
-Vous rencontrez un problème ou souhaitez confirmer vos débits ?
-
-* 👉 **[Fil de discussion pour les testeurs](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/1)** : Partagez vos retours et confirmez vos vitesses de téléchargement.
-* 👉 **[Confirmer un test de débit](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=test_confirmation.yml)** : Aidez à valider les performances en conditions réelles avec votre compte.
-* 👉 **[Signaler un bug](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=bug_report.yml)** : Si un lien refuse de se débrider ou en cas de comportement inattendu.
-* 👉 **[Proposer une amélioration](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=feature_request.yml)** : Proposez vos idées pour les futures versions.
+* 👉 **[Fil de discussion](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/1)** : Partagez vos retours et échangez sur les problèmes rencontrés.
+* 👉 **[Signaler un bug](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=bug_report.yml)** : En cas de comportement inattendu.
+* 👉 **[Proposer une amélioration](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=feature_request.yml)** : Proposez vos idées.
 
 ---
 
 ## 🛠️ Compilation depuis les sources (Développeurs)
 
 ```bash
-# Cloner le dépôt
 git clone https://github.com/DonTarken/motrix-plugin-realdebrid.git
 cd motrix-plugin-realdebrid
 
-# Lancer la suite de 15 tests unitaires
 npm test
-
-# Compiler le paquet .moext
 npm run build
 ```
 
-L'archive compilée sera enregistrée dans `dist/realdebrid-resolver.moext`.
+Les paquets compilés `.moext` sont générés dans `dist/`.
 
 ---
 
 ## 💖 Soutenir le Projet
-
-Si ce plugin vous fait gagner du temps et accélère vos téléchargements, pensez à soutenir son développement. Chaque café compte ! ☕
 
 <p align="center">
   <a href="https://ko-fi.com/dontarken" target="_blank">
@@ -144,5 +146,4 @@ Si ce plugin vous fait gagner du temps et accélère vos téléchargements, pens
 
 ## 📄 Licence
 
-Open-source sous licence **[MIT](LICENSE)**.  
-Développé avec passion par **[DonTarken](https://github.com/DonTarken)**.
+Open-source sous licence **[MIT](LICENSE)** par **[DonTarken](https://github.com/DonTarken)**.

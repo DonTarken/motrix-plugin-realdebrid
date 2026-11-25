@@ -1,6 +1,6 @@
 {
   "name": "motrix-plugin-realdebrid",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Real-Debrid download resolver plugin for Motrix download manager",
   "main": "dist/plugin.js",
   "type": "module",

@@ -24,12 +24,12 @@
 
 Do you use **Motrix** as your daily download manager and hold a **Real-Debrid** premium subscription?
 
-This autonomous plugin (`.moext`) transforms Motrix into a modern, lightning-fast, and lightweight alternative to **JDownloader**:
-- **100% Automatic Unrestricting**: Paste any supported link (1fichier, Rapidgator, Turbobit, Mega, Katfile, etc.), and Motrix instantly unlocks the high-speed CDN stream via the official Real-Debrid REST API v1.0.
-- **Simple API Token Configuration**: Quickly paste your personal API token into the extension settings and you're good to go.
-- **Max Throughput**: Saturates your gigabit fiber connection (up to 100+ MB/s) powered by Motrix's Aria2 multi-connection engine.
-- **Multi-Resolver Compatibility**: Designed to co-exist cleanly with [motrix-plugin-alldebrid](https://github.com/DonTarken/motrix-plugin-alldebrid) with zero conflict.
-- **Tested & Hardened**: Comprehensive 15-test automated unit suite covering fail-closed security, Bearer token authentication, and network resilience.
+This autonomous plugin (`.moext`) turns Motrix into a fast, lightweight alternative to **JDownloader**:
+- **100% Automatic Unrestricting**: Paste any supported link (1fichier, Rapidgator, Turbobit, Mega, Katfile, Nitroflare, etc.), and Motrix unlocks the high-speed direct link via the official Real-Debrid REST API v1.0.
+- **Built-in Motrix UI Configuration**: Configure and verify your Real-Debrid API token directly from the extension's **Operations** tab inside Motrix.
+- **Fail-Safe Download Protection**: If a link cannot be unrestricted (expired account, dead file, missing key), Motrix aborts the task and notifies you instead of downloading an HTML webpage.
+- **Max Throughput**: Saturates gigabit fiber connections powered by Motrix's Aria2 multi-connection engine.
+- **Automated Test Suite**: Tested for fail-closed host matching, Bearer token isolation, Motrix schema conformance, and error handling.
 
 ---
 
@@ -40,28 +40,33 @@ This autonomous plugin (`.moext`) transforms Motrix into a modern, lightning-fas
 #### Method A: Directly via GitHub (Recommended — Fastest)
 1. Open **Motrix** and click on the **"Extensions"** tab in the left navigation sidebar (package icon 📦 below *Trackers*).
 2. Click the **`+`** button in the upper-right corner to open the *"Add an extension"* modal.
-3. In the input field, simply enter the repository name:
+3. Enter the repository name:
    ```text
    DonTarken/motrix-plugin-realdebrid
    ```
-   *(The badge below will switch to **`Detected type: GitHub`** — make sure not to prefix it with `https://` so Motrix queries GitHub releases directly).*
-4. Click the search icon 🔍 in the lower-right corner (or press Enter). Motrix will automatically download the official release and prompt you to confirm the installation!
+   *(Do not prefix it with `https://` so Motrix fetches GitHub releases directly).*
+4. Click the search icon 🔍 (or press Enter) and confirm the installation.
 
 ---
 
 #### 📁 Method B: Via Local `.moext` File
 1. 👉 **[Download `realdebrid-resolver.moext`](https://github.com/DonTarken/motrix-plugin-realdebrid/releases/latest/download/realdebrid-resolver.moext)** (latest release).
-2. In Motrix ➔ **Extensions** tab ➔ click the **`+`** button in the upper-right corner.
-3. **Drag and drop** the downloaded file directly into the input field, or click the paperclip icon 📎 to choose it from your files.
-4. Confirm the installation.
+2. In Motrix ➔ **Extensions** tab ➔ click **`+`** in the upper-right corner.
+3. **Drag and drop** the downloaded file into the field (or select it with the paperclip icon 📎) and confirm.
 
 ---
 
-### Step 2: Enter Your Real-Debrid API Token
-1. On the **Extensions** page, locate the **Real-Debrid Resolver** card and click the **"Open"** button.
-2. Retrieve your personal API token from your Real-Debrid account: **[real-debrid.com/apitoken](https://real-debrid.com/apitoken)**.
-3. Paste your token into the **Real-Debrid API Token** field and save.
-4. A notification confirms your **Premium status is active** with your remaining days. You're ready to download! 🎉
+### Step 2: Enter & Verify Your Real-Debrid API Token
+
+> **Why Operations instead of Settings?** Motrix Desktop 2.4.x currently has an upstream bug where values typed in an extension's *Settings* tab are not forwarded to plugins at runtime. Using the extension's **Operations** tab saves your token reliably into Motrix's local SQLite storage.
+
+1. Retrieve your personal API token at **[real-debrid.com/apitoken](https://real-debrid.com/apitoken)**.
+2. In Motrix, open **Extensions** ➔ **Real-Debrid Resolver**.
+3. Open the **Operations** tab (**Account & Settings**).
+4. Paste your API token into **Real-Debrid API Token** and click **Save & Verify**.
+5. Motrix verifies your account immediately and displays your plan & expiration right on screen!
+
+*(Alternative shortcut: pasting `https://real-debrid.com/set-key/YOUR_API_TOKEN` into Motrix's **Add Task (+)** dialog also saves your token directly.)*
 
 ---
 
@@ -69,7 +74,7 @@ This autonomous plugin (`.moext`) transforms Motrix into a modern, lightning-fas
 
 * **Single Download:** Copy any filehoster link and paste it into Motrix (`Ctrl + N` or `+` button).
 * **Batch Downloads:** Paste 10, 20, or 50 split archive parts (`.part01.rar`, `.part02.rar`...); all links are unrestricted and queued in parallel.
-* **Browser Extension:** Use Motrix's Chrome or Firefox extension to right-click **"Download with Motrix"** on any link on the web.
+* **Browser Extension:** Use Motrix's browser extension to right-click **"Download with Motrix"** on supported links.
 
 ---
 
@@ -81,58 +86,55 @@ This autonomous plugin (`.moext`) transforms Motrix into a modern, lightning-fas
 
 If downloading very large files (e.g. 20 to 60 GB video files), check where Motrix is writing:
 - **Use an SSD (SATA or NVMe)** instead of a 5400 RPM mechanical HDD.
-- On slow mechanical drives, allocating a 50 GB file can saturate Windows NTFS I/O queues for minutes, temporarily starving Aria2's RPC statistics loop.
-- On an SSD, space is allocated instantly and speeds jump straight to 90–115 MB/s on gigabit fiber.
+- On slow mechanical drives, pre-allocating a large file can saturate disk I/O queues for minutes, temporarily starving Aria2's RPC stats loop.
 </details>
 
 <details>
 <summary><b>Which hosters are supported?</b></summary>
 <br>
 
-All filehosters supported by your Real-Debrid account: 1fichier, Rapidgator, Turbobit, Mega, Katfile, DDownload, Uptobox, Filefactory, Nitroflare, and more. The plugin refreshes the supported hosts list automatically every hour.
+All filehosters supported by your Real-Debrid account (280+ domains including 1fichier, Rapidgator, Turbobit, Mega, Katfile, DDownload, Filefactory, Nitroflare, etc.). The plugin refreshes the supported hosts list automatically every hour.
+</details>
+
+<details>
+<summary><b>Why does the extension request broad host permissions (*://*/*)?</b></summary>
+<br>
+
+Motrix requires `beforeCreate` plugins to match a task URL against `hostPermissions` before the hook is even invoked. Because Real-Debrid supports 280+ dynamic domains, a wildcard pattern is needed for Motrix to hand incoming links to the plugin. **Fail-closed check**: the plugin matches URLs strictly against Real-Debrid's official domain list inside Motrix first, and non-matching links are never sent to Real-Debrid.
 </details>
 
 <details>
 <summary><b>Are my account credentials safe?</b></summary>
 <br>
 
-**100% safe.** The plugin never asks for nor accesses your Real-Debrid password. Your personal API token is stored locally on your machine within Motrix's secure application data and transmitted strictly via standard `Authorization: Bearer` headers.
+**Yes.** The plugin never asks for your Real-Debrid password. Your API token stays locally on your machine in Motrix's storage and is only sent to `api.real-debrid.com` via `Authorization: Bearer`.
 </details>
 
 ---
 
 ## 🐛 Issues, Testing & Feedback
 
-Encountered an issue or want to confirm test speeds?
-
-* 👉 **[Discussion thread for testers](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/1)**: Join the discussion and share your feedback.
-* 👉 **[Confirm test results & speeds](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=test_confirmation.yml)**: Help validate real-world speeds with your Real-Debrid account.
-* 👉 **[Report a Bug](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=bug_report.yml)**: If a link fails to unrestrict or you experience unexpected behavior.
-* 👉 **[Request a Feature](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=feature_request.yml)**: Share your ideas for future improvements.
+* 👉 **[Discussion thread](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/1)**: Join the discussion and share feedback.
+* 👉 **[Report a Bug](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=bug_report.yml)**: If a link fails unexpectedly.
+* 👉 **[Request a Feature](https://github.com/DonTarken/motrix-plugin-realdebrid/issues/new?template=feature_request.yml)**: Suggest improvements.
 
 ---
 
 ## 🛠️ Building from Source (Developers)
 
 ```bash
-# Clone the repository
 git clone https://github.com/DonTarken/motrix-plugin-realdebrid.git
 cd motrix-plugin-realdebrid
 
-# Run the 15-test unit suite
 npm test
-
-# Build the .moext package
 npm run build
 ```
 
-Compiled package will be saved in `dist/realdebrid-resolver.moext`.
+Compiled `.moext` packages are output to `dist/`.
 
 ---
 
 ## 💖 Support the Project
-
-If this plugin saves you time and speeds up your downloads, please consider supporting its development and maintenance. Every coffee counts! ☕
 
 <p align="center">
   <a href="https://ko-fi.com/dontarken" target="_blank">
@@ -144,5 +146,4 @@ If this plugin saves you time and speeds up your downloads, please consider supp
 
 ## 📄 License
 
-Open-source under the **[MIT](LICENSE)** license.  
-Crafted with passion by **[DonTarken](https://github.com/DonTarken)**.
+Open-source under the **[MIT](LICENSE)** license by **[DonTarken](https://github.com/DonTarken)**.

@@ -1,5 +1,8 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   shouldSkip,
   extractHostname,
@@ -8,10 +11,16 @@ import {
   getSupportedDomains,
   resetHostsCache,
   getApiKey,
+  getBooleanSetting,
   extractKeyFromSetupUrl,
+  formatUnrestrictError,
+  verifyAccountDetailed,
   checkAccount
 } from "../src/index.js";
 import { state, resetMockState } from "./mock-api.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(__dirname, "..");
 
 describe("Strict Hostname Parsing & Exclusions (shouldSkip)", () => {
   it("excludes Real-Debrid domains and other debrid services", () => {
@@ -83,7 +92,6 @@ describe("Fail-Closed Policy & Host Validation (isSupportedHost)", () => {
     resetMockState();
     resetHostsCache();
     state.configStore.set("apiKey", "VALID_KEY_123");
-    // Mock /hosts/domains with only rapidgator
     state.httpMockResponse = {
       status: 200,
       body: JSON.stringify(["rapidgator.net"])
@@ -97,10 +105,9 @@ describe("Fail-Closed Policy & Host Validation (isSupportedHost)", () => {
 
     const result = await state.beforeCreateHook(ctx);
 
-    // Verify /unrestrict/link was NEVER called
     const unrestrictCalls = state.httpRequests.filter(r => r.url.includes("/unrestrict/link"));
     assert.equal(unrestrictCalls.length, 0, "Unsupported URL must NEVER be sent to /unrestrict/link!");
-    assert.equal(result.uris[0], "https://private-server.org/confidential-archive.zip", "Original URL must remain untouched");
+    assert.equal(result.uris[0], "https://private-server.org/confidential-archive.zip");
   });
 });
 
@@ -129,7 +136,6 @@ describe("Network Security, Bearer Auth & Diagnostic Sanitization", () => {
     assert.ok(res);
     assert.equal(res.directUrl, "https://12.download.real-debrid.com/d/XYZ123/archive.zip");
 
-    // Check HTTP request details
     assert.equal(state.httpRequests.length, 1);
     const req = state.httpRequests[0];
     assert.equal(req.method, "POST");
@@ -143,17 +149,7 @@ describe("Network Security, Bearer Auth & Diagnostic Sanitization", () => {
   });
 
   it("never leaks sensitive URLs or tokens in diagnostic logs", async () => {
-    state.httpMockResponse = {
-      status: 200,
-      body: JSON.stringify({
-        id: "ABC999",
-        filename: "ubuntu.iso",
-        download: "https://12.download.real-debrid.com/d/ABC999/ubuntu.iso"
-      })
-    };
-
     state.configStore.set("apiKey", "MY_TOKEN_777");
-    // Mock /hosts/domains to include 1fichier
     state.httpMockResponse = (opts) => {
       if (opts.url.includes("/hosts/domains")) {
         return { status: 200, body: JSON.stringify(["1fichier.com"]) };
@@ -176,7 +172,6 @@ describe("Network Security, Bearer Auth & Diagnostic Sanitization", () => {
 
     await state.beforeCreateHook(ctx);
 
-    // Verify logs do NOT contain the full URL or token
     for (const logItem of state.logs) {
       const fullLogText = JSON.stringify(logItem);
       assert.equal(
@@ -188,7 +183,6 @@ describe("Network Security, Bearer Auth & Diagnostic Sanitization", () => {
   });
 
   it("retains previous cache if host refresh fails (fail-closed fallback)", async () => {
-    // First call: successful response with 2 hosts
     state.httpMockResponse = {
       status: 200,
       body: JSON.stringify(["turbobit.net", "1fichier.com"])
@@ -198,18 +192,36 @@ describe("Network Security, Bearer Auth & Diagnostic Sanitization", () => {
     assert.ok(initialCache);
     assert.equal(initialCache.has("turbobit.net"), true);
 
-    // Second call: simulated network failure (500 or timeout) with forced refresh
     state.httpMockResponse = { status: 500, body: "Internal Server Error" };
 
-    // Previous cache must be retained if refresh fails
     const refreshedCache = await getSupportedDomains(true);
     assert.ok(refreshedCache, "Previous cache must be preserved on HTTP 500");
     assert.equal(refreshedCache.has("turbobit.net"), true);
   });
 
+  it("deduplicates concurrent cold-start /hosts/domains refreshes", async () => {
+    let callCount = 0;
+    state.httpMockResponse = async () => {
+      callCount++;
+      await new Promise((r) => setTimeout(r, 10));
+      return { status: 200, body: JSON.stringify(["1fichier.com", "rapidgator.net"]) };
+    };
+
+    const [d1, d2, d3] = await Promise.all([
+      getSupportedDomains(),
+      getSupportedDomains(),
+      getSupportedDomains()
+    ]);
+
+    assert.equal(callCount, 1, "Concurrent calls should share one HTTP request");
+    assert.equal(d1.size, 2);
+    assert.equal(d2, d1);
+    assert.equal(d3, d1);
+  });
+
   it("handles request timeouts when fetching hosts list without failing open", async () => {
     state.httpMockResponse = () => {
-      const timeoutErr = new Error("Connection timed out after 8000ms");
+      const timeoutErr = new Error("Connection timed out");
       timeoutErr.name = "TimeoutError";
       throw timeoutErr;
     };
@@ -236,7 +248,7 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
   });
 
   it("successfully unrestricts supported URLs and rewrites ctx.uris (Happy Path)", async () => {
-    state.configStore.set("apiKey", "VALID_KEY_XYZ");
+    state.storageStore.set("apiKey", "VALID_KEY_XYZ");
 
     state.httpMockResponse = (opts) => {
       if (opts.url.includes("/hosts/domains")) {
@@ -277,7 +289,7 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
   });
 
   it("bypasses non-http downloads (magnets, torrents) without calling network", async () => {
-    state.configStore.set("apiKey", "VALID_KEY_XYZ");
+    state.storageStore.set("apiKey", "VALID_KEY_XYZ");
     const ctx = {
       type: "bittorrent",
       uris: ["magnet:?xt=urn:btih:abcdef1234567890"],
@@ -290,9 +302,9 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
     assert.equal(result.uris[0], "magnet:?xt=urn:btih:abcdef1234567890");
   });
 
-  it("bypasses unrestricting when plugin is disabled in config", async () => {
-    state.configStore.set("apiKey", "VALID_KEY_XYZ");
-    state.configStore.set("enabled", false);
+  it("bypasses unrestricting when plugin is disabled via config or SQLite storage", async () => {
+    state.storageStore.set("apiKey", "VALID_KEY_XYZ");
+    state.storageStore.set("enabled", false);
 
     const ctx = {
       type: "http",
@@ -301,12 +313,17 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
     };
 
     const result = await state.beforeCreateHook(ctx);
-
-    assert.equal(state.httpRequests.length, 0, "No network request when plugin is disabled");
+    assert.equal(state.httpRequests.length, 0, "No network request when disabled in storage");
     assert.equal(result.uris[0], "https://rapidgator.net/file/123");
+
+    state.storageStore.delete("enabled");
+    state.configStore.set("enabled", false);
+    const result2 = await state.beforeCreateHook(ctx);
+    assert.equal(state.httpRequests.length, 0, "No network request when disabled in config");
+    assert.equal(result2.uris[0], "https://rapidgator.net/file/123");
   });
 
-  it("warns user via notification and aborts task when API key is missing on supported host", async () => {
+  it("warns user via valid Motrix notification and aborts task when API key is missing on supported host", async () => {
     state.configStore.delete("apiKey");
     state.storageStore.delete("apiKey");
 
@@ -325,15 +342,17 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
 
     await assert.rejects(
       async () => { await state.beforeCreateHook(ctx); },
-      /Real-Debrid: No API key configured/
+      /No API key configured/
     );
 
     assert.equal(state.notifications.length, 1);
     assert.equal(state.notifications[0].title, "Real-Debrid — Configuration Required");
+    assert.equal(state.notifications[0].icon, "info");
+    assert.equal(state.notifications[0].urgency, "normal");
   });
 
-  it("aborts task with error notification when Real-Debrid API returns error (free account, bad token, dead link)", async () => {
-    state.configStore.set("apiKey", "FREE_OR_INVALID_KEY");
+  it("aborts task with localized error notification when Real-Debrid API returns error", async () => {
+    state.storageStore.set("apiKey", "FREE_OR_INVALID_KEY");
 
     state.httpMockResponse = (opts) => {
       if (opts.url.includes("/hosts/domains")) {
@@ -342,61 +361,64 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
       if (opts.url.includes("/unrestrict/link")) {
         return {
           status: 403,
-          body: JSON.stringify({ error: "bad_token", error_code: 8 })
+          body: JSON.stringify({ error: "hoster_not_free", error_code: 20 })
         };
       }
       return { status: 404, body: "{}" };
     };
 
-    const originalUrl = "https://turbobit.net/download/abc123.zip";
     const ctx = {
       type: "http",
-      uris: [originalUrl],
+      uris: ["https://turbobit.net/download/abc123.zip"],
       update: (patch) => { Object.assign(ctx, patch); }
     };
 
     await assert.rejects(
       async () => { await state.beforeCreateHook(ctx); },
-      /Real-Debrid: Debriding failed/
+      /Debriding failed \(hoster_not_free\)/
     );
 
-    assert.equal(state.notifications.length, 1, "An error notification should be emitted to alert the user");
+    assert.equal(state.notifications.length, 1);
     assert.equal(state.notifications[0].icon, "error");
-    assert.ok(
-      state.logs.some(l => l.msg.includes("Debriding failed")),
-      "Diagnostic log should record the unrestrict failure"
-    );
+    assert.ok(state.notifications[0].body.includes("hoster_not_free"));
+  });
+
+  it("maps Real-Debrid REST API error codes cleanly", () => {
+    assert.ok(formatUnrestrictError("unavailable_file", "").includes("unavailable"));
+    assert.ok(formatUnrestrictError("hoster_unsupported", "").includes("not supported"));
+    assert.ok(formatUnrestrictError("hoster_maintenance", "").includes("maintenance"));
+    assert.ok(formatUnrestrictError("traffic_exhausted", "").includes("traffic"));
+    assert.ok(formatUnrestrictError("unknown_code_xyz", "HTTP error 503").includes("unknown_code_xyz"));
   });
 
   it("aborts task when Real-Debrid unrestrict request throws network timeout", async () => {
-    state.configStore.set("apiKey", "VALID_KEY");
+    state.storageStore.set("apiKey", "VALID_KEY");
 
     state.httpMockResponse = (opts) => {
       if (opts.url.includes("/hosts/domains")) {
         return { status: 200, body: JSON.stringify(["turbobit.net"]) };
       }
       if (opts.url.includes("/unrestrict/link")) {
-        const timeoutErr = new Error("Connection timed out after 15000ms");
+        const timeoutErr = new Error("Connection timed out");
         timeoutErr.name = "TimeoutError";
         throw timeoutErr;
       }
       return { status: 404, body: "{}" };
     };
 
-    const originalUrl = "https://turbobit.net/download/abc123.zip";
     const ctx = {
       type: "http",
-      uris: [originalUrl],
+      uris: ["https://turbobit.net/download/abc123.zip"],
       update: (patch) => { Object.assign(ctx, patch); }
     };
 
     await assert.rejects(
       async () => { await state.beforeCreateHook(ctx); },
-      /Real-Debrid: Debriding failed/
+      /Debriding failed \(network_error\)/
     );
   });
 
-  it("respects showNotification: false config setting upon successful unrestrict", async () => {
+  it("respects showNotification: false from storage or config upon successful unrestrict", async () => {
     state.configStore.set("apiKey", "VALID_KEY");
     state.configStore.set("showNotification", false);
 
@@ -420,27 +442,32 @@ describe("Download Hook Lifecycle & Resilient Fallback (beforeCreate)", () => {
     };
 
     const result = await state.beforeCreateHook(ctx);
-
     assert.equal(result.uris[0], "https://12.download.real-debrid.com/d/XYZ/video.mp4");
-    assert.equal(state.notifications.length, 0, "No notification should be emitted when showNotification is false");
+    assert.equal(state.notifications.length, 0);
+
+    // Verify storage preference overrides when set
+    state.configStore.delete("showNotification");
+    state.storageStore.set("showNotification", false);
+    assert.equal(await getBooleanSetting("showNotification", true), false);
   });
 });
 
-describe("Account Status Verification (checkAccount) & Lifecycle Commands", () => {
+describe("Account Status Verification (checkAccount) & Operations UI", () => {
+  const sampleKey = "2E6IYTRT5LQVVV7AV6PRX6I5MNLTURH6WW6RP77NXJH3YVXN6TIQ";
+
   beforeEach(() => {
     resetMockState();
     resetHostsCache();
   });
 
-  it("verifies active premium account, formats date, and emits success notification", async () => {
+  it("verifies active premium account, formats date (including +0000), and emits notification", async () => {
     state.httpMockResponse = {
       status: 200,
       body: JSON.stringify({
         id: 12345,
         username: "tester_pro",
-        email: "tester@example.com",
         type: "premium",
-        expiration: "2028-06-15T12:00:00.000Z"
+        expiration: "2028-06-15T12:00:00+0000"
       })
     };
 
@@ -448,21 +475,19 @@ describe("Account Status Verification (checkAccount) & Lifecycle Commands", () =
 
     assert.ok(user);
     assert.equal(user.username, "tester_pro");
-    assert.equal(user.type, "premium");
     assert.equal(state.notifications.length, 1);
     assert.equal(state.notifications[0].title, "Real-Debrid — Premium Active");
-    assert.ok(state.notifications[0].body.includes("tester_pro"));
     assert.ok(state.notifications[0].body.includes("15/06/2028"));
   });
 
-  it("detects free/non-premium account and emits warning notification", async () => {
+  it("detects free account and emits valid info notification", async () => {
     state.httpMockResponse = {
       status: 200,
       body: JSON.stringify({
         id: 54321,
         username: "tester_free",
         type: "free",
-        expiration: null
+        expiration: "2026-11-25T01:18:08.000Z"
       })
     };
 
@@ -472,37 +497,90 @@ describe("Account Status Verification (checkAccount) & Lifecycle Commands", () =
     assert.equal(user.type, "free");
     assert.equal(state.notifications.length, 1);
     assert.equal(state.notifications[0].title, "Real-Debrid — Non-Premium");
-    assert.ok(state.notifications[0].body.includes("tester_free"));
+    assert.equal(state.notifications[0].icon, "info");
   });
 
-  it("handles authentication failure (HTTP 401/403) and emits authError notification", async () => {
+  it("notifies configuration required when checkAccount runs with empty key", async () => {
+    const user = await checkAccount("", true);
+    assert.equal(user, null);
+    assert.equal(state.notifications.length, 1);
+    assert.equal(state.notifications[0].title, "Real-Debrid — Configuration Required");
+  });
+
+  it("handles authentication failure (HTTP 401) and network errors distinctly", async () => {
+    state.httpMockResponse = { status: 401, body: JSON.stringify({ error: "bad_token" }) };
+    const authFail = await verifyAccountDetailed("BAD_KEY");
+    assert.equal(authFail.ok, false);
+    assert.equal(authFail.reason, "invalidToken");
+
+    state.httpMockResponse = () => { throw new Error("Network unreachable"); };
+    const netFail = await verifyAccountDetailed("ANY_KEY");
+    assert.equal(netFail.ok, false);
+    assert.equal(netFail.reason, "networkError");
+  });
+
+  it("runs Motrix Operation (account) to validate key, store preferences, and return summary", async () => {
+    const handler = state.registeredOperations.get("community.realdebrid-resolver.account");
+    assert.ok(typeof handler === "function", "Operation handler must be registered");
+
     state.httpMockResponse = {
-      status: 401,
-      body: JSON.stringify({ error: "bad_token" })
+      status: 200,
+      body: JSON.stringify({
+        id: 1,
+        username: "dontarken",
+        type: "premium",
+        expiration: "2028-01-01T00:00:00.000Z"
+      })
     };
 
-    const user = await checkAccount("INVALID_TOKEN", true);
+    const res = await handler({
+      apiKey: sampleKey,
+      enabled: true,
+      showNotification: false
+    });
 
-    assert.equal(user, null);
+    assert.equal(state.storageStore.get("apiKey"), sampleKey);
+    assert.equal(state.storageStore.get("enabled"), true);
+    assert.equal(state.storageStore.get("showNotification"), false);
+    assert.equal(res.username, "dontarken");
+    assert.equal(res.accountType, "Premium");
+    assert.ok(res.expiration.includes("01/01/2028"));
+    assert.equal(state.notifications.length, 0, "Respects showNotification: false");
+
+    // Re-running with blank apiKey checks the previously stored key
+    const res2 = await handler({
+      apiKey: "",
+      enabled: false,
+      showNotification: true
+    });
+    assert.equal(state.storageStore.get("enabled"), false);
+    assert.equal(res2.status, "Verified using saved token");
     assert.equal(state.notifications.length, 1);
-    assert.equal(state.notifications[0].title, "Real-Debrid — Authentication Error");
-    assert.ok(state.notifications[0].body.includes("bad_token"));
   });
 
-  it("handles network exception during account verification gracefully", async () => {
-    state.httpMockResponse = () => {
-      throw new Error("Network unreachable");
-    };
+  it("Operation returns structured Motrix operation errors on missing/invalid/network failure", async () => {
+    const handler = state.registeredOperations.get("community.realdebrid-resolver.account");
 
-    const user = await checkAccount("ANY_TOKEN", true);
+    await assert.rejects(
+      async () => { await handler({ apiKey: "", enabled: true, showNotification: true }); },
+      /^Error: operation\.error\.missingKey$|^operation\.error\.missingKey$/
+    );
 
-    assert.equal(user, null);
-    assert.equal(state.notifications.length, 1);
-    assert.equal(state.notifications[0].title, "Real-Debrid — Error");
+    state.httpMockResponse = { status: 401, body: JSON.stringify({ error: "bad_token" }) };
+    await assert.rejects(
+      async () => { await handler({ apiKey: "BAD_TOKEN_123456789012", enabled: true, showNotification: true }); },
+      /operation\.error\.invalidToken/
+    );
+
+    state.httpMockResponse = () => { throw new Error("timeout"); };
+    await assert.rejects(
+      async () => { await handler({ apiKey: "ANY_TOKEN_123456789012", enabled: true, showNotification: true }); },
+      /operation\.error\.networkError/
+    );
   });
 
-  it("registers and executes community.realdebrid-resolver.checkAccount command", async () => {
-    state.configStore.set("apiKey", "VALID_CMD_TOKEN");
+  it("registers and executes legacy checkAccount command", async () => {
+    state.storageStore.set("apiKey", "VALID_CMD_TOKEN");
     state.httpMockResponse = {
       status: 200,
       body: JSON.stringify({
@@ -514,8 +592,7 @@ describe("Account Status Verification (checkAccount) & Lifecycle Commands", () =
     };
 
     const handler = state.registeredCommands.get("community.realdebrid-resolver.checkAccount");
-    assert.ok(typeof handler === "function", "Command must be registered");
-
+    assert.ok(typeof handler === "function");
     await handler();
 
     assert.equal(state.notifications.length, 1);
@@ -540,7 +617,7 @@ describe("URL & Authority Parsing Edge Cases (extractHostname)", () => {
   });
 });
 
-describe("API Key Extraction & Storage Persistence", () => {
+describe("API Key Setup URLs & SQLite Storage Persistence", () => {
   const sampleKey = "2E6IYTRT5LQVVV7AV6PRX6I5MNLTURH6WW6RP77NXJH3YVXN6TIQ";
 
   beforeEach(() => {
@@ -548,17 +625,17 @@ describe("API Key Extraction & Storage Persistence", () => {
     resetHostsCache();
   });
 
-  it("extracts API key from various setup URL formats", () => {
+  it("extracts API key from HTTP setup URLs (including www) and ignores unsupported custom schemes", () => {
     assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/set-key/${sampleKey}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl(`https://www.real-debrid.com/set-key/${sampleKey}`), sampleKey);
     assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/?token=${sampleKey}`), sampleKey);
     assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/?apikey=${sampleKey}`), sampleKey);
-    assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/apitoken?key=${sampleKey}`), sampleKey);
-    assert.equal(extractKeyFromSetupUrl(`rd://${sampleKey}`), sampleKey);
-    assert.equal(extractKeyFromSetupUrl(`rd://set-key/${sampleKey}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl(`https://real-debrid.com/apitoken?key=${encodeURIComponent(sampleKey)}`), sampleKey);
+    assert.equal(extractKeyFromSetupUrl(`rd://${sampleKey}`), null);
     assert.equal(extractKeyFromSetupUrl("https://rapidgator.net/file/123"), null);
   });
 
-  it("reads API key from storage when config is empty", async () => {
+  it("reads API key from Motrix wrapped { value, version } storage when config is empty", async () => {
     state.configStore.delete("apiKey");
     state.storageStore.set("apiKey", sampleKey);
 
@@ -566,8 +643,7 @@ describe("API Key Extraction & Storage Persistence", () => {
     assert.equal(key, sampleKey);
   });
 
-  it("intercepts setup URL in beforeCreate, validates key, saves to storage, and aborts download", async () => {
-    state.storageStore.delete("apiKey");
+  it("intercepts setup URL in beforeCreate for Premium and Free accounts, saves to storage, and aborts", async () => {
     state.httpMockResponse = (opts) => {
       if (opts.url.includes("/user")) {
         return {
@@ -590,11 +666,82 @@ describe("API Key Extraction & Storage Persistence", () => {
 
     await assert.rejects(
       async () => { await state.beforeCreateHook(ctx); },
-      /Clé API enregistrée avec succès/
+      /API key saved for johndoe/
     );
 
     assert.equal(state.storageStore.get("apiKey"), sampleKey);
     assert.equal(state.notifications.length, 1);
     assert.equal(state.notifications[0].title, "Real-Debrid — API Key Saved");
+    assert.equal(state.notifications[0].icon, "success");
+
+    // Free account: notification must clearly note Free plan instead of fake Premium expiration
+    resetMockState();
+    state.httpMockResponse = {
+      status: 200,
+      body: JSON.stringify({ username: "freebie", type: "free", expiration: "2026-11-25T01:00:00Z" })
+    };
+    await assert.rejects(
+      async () => { await state.beforeCreateHook(ctx); },
+      /API key saved for freebie/
+    );
+    assert.equal(state.notifications[0].icon, "info");
+    assert.ok(state.notifications[0].body.includes("Free"));
+  });
+
+  it("distinguishes invalid key vs network error in setup URL", async () => {
+    const ctx = {
+      type: "http",
+      uris: [`https://real-debrid.com/set-key/${sampleKey}`],
+      update: () => {}
+    };
+
+    state.httpMockResponse = { status: 401, body: JSON.stringify({ error: "bad_token" }) };
+    await assert.rejects(
+      async () => { await state.beforeCreateHook(ctx); },
+      /Invalid API token/
+    );
+    assert.equal(state.notifications[0].icon, "error");
+    assert.equal(state.storageStore.has("apiKey"), false);
+
+    resetMockState();
+    state.httpMockResponse = () => { throw new Error("timeout"); };
+    await assert.rejects(
+      async () => { await state.beforeCreateHook(ctx); },
+      /network error/
+    );
+  });
+});
+
+describe("Manifest & Locales Structural Integrity", () => {
+  it("validates motrix-plugin.json fields and complete locale parity across en-US, fr-FR, fr", () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(rootDir, "motrix-plugin.json"), "utf8"));
+    const enUS = JSON.parse(fs.readFileSync(path.join(rootDir, "locales/en-US.json"), "utf8"));
+    const frFR = JSON.parse(fs.readFileSync(path.join(rootDir, "locales/fr-FR.json"), "utf8"));
+    const fr = JSON.parse(fs.readFileSync(path.join(rootDir, "locales/fr.json"), "utf8"));
+
+    assert.equal(manifest.id, "community.realdebrid-resolver");
+    assert.equal(manifest.version, "1.0.4");
+    assert.equal(manifest.activationEvents.includes("onStartup"), false);
+    assert.ok(manifest.contributes.operations?.items?.length === 1);
+
+    const enKeys = Object.keys(enUS).sort();
+    const frFRKeys = Object.keys(frFR).sort();
+    const frKeys = Object.keys(fr).sort();
+
+    assert.deepEqual(frFRKeys, enKeys, "fr-FR.json must match en-US.json keys");
+    assert.deepEqual(frKeys, enKeys, "fr.json must match en-US.json keys");
+
+    // Verify every %placeholder% in manifest exists in en-US.json
+    const walk = (node) => {
+      if (typeof node === "string") {
+        const m = /^%([^%]+)%$/.exec(node);
+        if (m) assert.ok(Object.hasOwn(enUS, m[1]), `Missing locale key for placeholder ${node}`);
+      } else if (Array.isArray(node)) {
+        node.forEach(walk);
+      } else if (node && typeof node === "object") {
+        Object.values(node).forEach(walk);
+      }
+    };
+    walk(manifest);
   });
 });

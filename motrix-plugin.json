@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "community.realdebrid-resolver",
   "name": "%name%",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "%description%",
   "author": "DonTarken",
   "homepage": "https://github.com/DonTarken/motrix-plugin-realdebrid",
@@ -18,15 +18,139 @@
   "requestedHeapMB": 32,
   "permissions": ["http", "notify", "storage"],
   "hostPermissions": ["*://*/*"],
-  "activationEvents": ["onTaskType:http", "onProtocol:https", "onProtocol:http", "onStartup"],
+  "activationEvents": [
+    "onTaskType:http",
+    "onProtocol:https",
+    "onProtocol:http",
+    "onCommand:community.realdebrid-resolver.account"
+  ],
   "contributes": {
     "commands": [
+      {
+        "id": "community.realdebrid-resolver.account",
+        "title": "%cmd.account.title%",
+        "execution": "operation",
+        "public": false,
+        "argsSchema": {
+          "type": "object",
+          "properties": {
+            "apiKey": {
+              "type": "string",
+              "maxLength": 256,
+              "default": ""
+            },
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "showNotification": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "resultSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "title": "%op.result.status%",
+              "maxLength": 256
+            },
+            "username": {
+              "type": "string",
+              "title": "%op.result.username%",
+              "maxLength": 128
+            },
+            "accountType": {
+              "type": "string",
+              "title": "%op.result.accountType%",
+              "maxLength": 256
+            },
+            "expiration": {
+              "type": "string",
+              "title": "%op.result.expiration%",
+              "maxLength": 256
+            },
+            "settings": {
+              "type": "string",
+              "title": "%op.result.settings%",
+              "maxLength": 256
+            }
+          },
+          "required": ["status", "username", "accountType", "expiration", "settings"],
+          "additionalProperties": false
+        }
+      },
       {
         "id": "community.realdebrid-resolver.checkAccount",
         "title": "%cmd.checkAccount%",
         "public": false
       }
     ],
+    "operations": {
+      "version": 1,
+      "items": [
+        {
+          "id": "community.realdebrid-resolver.account",
+          "title": "%op.account.title%",
+          "description": "%op.account.desc%",
+          "icon": "action",
+          "command": "community.realdebrid-resolver.account",
+          "requires": ["operations.v1", "operations.ui.v1"],
+          "fields": [
+            {
+              "field": "apiKey",
+              "label": "%op.apiKey.label%",
+              "help": "%op.apiKey.help%",
+              "widget": "text",
+              "appearance": {
+                "placeholder": "%op.apiKey.placeholder%"
+              }
+            },
+            {
+              "field": "enabled",
+              "label": "%op.enabled.label%",
+              "help": "%op.enabled.help%",
+              "widget": "switch"
+            },
+            {
+              "field": "showNotification",
+              "label": "%op.showNotification.label%",
+              "help": "%op.showNotification.help%",
+              "widget": "switch"
+            }
+          ],
+          "entries": [
+            {
+              "surface": "plugin-detail"
+            }
+          ],
+          "ui": {
+            "submitLabel": "%op.submit%",
+            "repeatLabel": "%op.repeat%",
+            "repeat": "reset",
+            "layout": {
+              "type": "stack",
+              "children": [
+                { "type": "field", "field": "apiKey" },
+                { "type": "field", "field": "enabled" },
+                { "type": "field", "field": "showNotification" }
+              ]
+            }
+          },
+          "result": {
+            "fields": ["status", "username", "accountType", "expiration", "settings"]
+          },
+          "errors": {
+            "missingKey": "%op.error.missingKey%",
+            "invalidToken": "%op.error.invalidToken%",
+            "networkError": "%op.error.networkError%"
+          }
+        }
+      ]
+    },
     "hooks": {
       "beforeCreate": {
         "role": "resolve"
