@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "community.realdebrid-resolver",
   "name": "%name%",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "%description%",
   "author": "DonTarken",
   "homepage": "https://github.com/DonTarken/motrix-plugin-realdebrid",
@@ -154,33 +154,6 @@
     "hooks": {
       "beforeCreate": {
         "role": "resolve"
-      }
-    },
-    "configuration": {
-      "title": "%settings.title%",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "apiKey": {
-            "type": "string",
-            "title": "%settings.apiKey.title%",
-            "description": "%settings.apiKey.desc%",
-            "default": ""
-          },
-          "enabled": {
-            "type": "boolean",
-            "title": "%settings.enabled.title%",
-            "description": "%settings.enabled.desc%",
-            "default": true
-          },
-          "showNotification": {
-            "type": "boolean",
-            "title": "%settings.showNotification.title%",
-            "description": "%settings.showNotification.desc%",
-            "default": true
-          }
-        },
-        "required": ["apiKey"]
       }
     }
   },

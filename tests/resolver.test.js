@@ -720,8 +720,9 @@ describe("Manifest & Locales Structural Integrity", () => {
     const fr = JSON.parse(fs.readFileSync(path.join(rootDir, "locales/fr.json"), "utf8"));
 
     assert.equal(manifest.id, "community.realdebrid-resolver");
-    assert.equal(manifest.version, "1.0.4");
+    assert.equal(manifest.version, "1.0.5");
     assert.equal(manifest.activationEvents.includes("onStartup"), false);
+    assert.equal(manifest.contributes.configuration, undefined);
     assert.ok(manifest.contributes.operations?.items?.length === 1);
 
     const enKeys = Object.keys(enUS).sort();
